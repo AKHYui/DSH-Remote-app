@@ -1,7 +1,8 @@
 name: dsh_remote_app
 description: >-
   Remote control for a DeepSeek Harness desktop, through a self-hosted relay.
-  Talks to the relay documented in docs/PROTOCOL.md.
+  The wire contract lives in the relay repository (DSH-Remote-backend,
+  docs/PROTOCOL.md).
 publish_to: "none"
 version: 0.2.0+5
 
