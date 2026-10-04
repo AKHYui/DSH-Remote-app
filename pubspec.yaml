@@ -1,0 +1,41 @@
+name: dsh_remote_app
+description: >-
+  Remote control for a DeepSeek Harness desktop, through a self-hosted relay.
+  Talks to the relay documented in docs/PROTOCOL.md.
+publish_to: "none"
+version: 0.2.0+5
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # HTTP + SSE. `IOClient` lets us hand it an HttpClient that trusts our CA.
+  http: ^1.2.0
+  # State management for a small app with a few long-lived streams.
+  flutter_riverpod: ^2.5.1
+  # Device token at rest. Uses Keystore/Keychain, not SharedPreferences.
+  flutter_secure_storage: ^9.2.2
+  # SHA-256 for the CA fingerprint shown on the settings screen.
+  crypto: ^3.0.3
+  intl: ^0.19.0
+  # Attachments. `image_picker` downscales and re-encodes on the native side
+  # (`maxWidth`/`maxHeight`/`imageQuality`), which is what keeps a photo under the
+  # relay's 4 MiB body limit without shipping a Dart image library.
+  image_picker: ^1.1.2
+  # Anything that is not an image: the Storage Access Framework, no permission.
+  file_picker: ^8.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # The internal CA that signed the relay's certificate. Bundled rather than
+    # relying on the platform store: on Android 7+ an app does not trust user
+    # installed CAs by default, and `SecurityContext` sidesteps that entirely.
+    - assets/ca.crt

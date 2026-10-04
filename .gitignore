@@ -1,0 +1,73 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Widget Preview related
+.widget_preview/
+
+# Local toolchain paths: absolute SDK/JDK locations for this machine only.
+# (Android Studio writes this file itself on every fresh checkout.)
+/android/local.properties
+
+# Android build outputs, Gradle caches and signing material
+#
+# `/build/` above is anchored to this directory, so it covers `app/build/` but not
+# `android/build/` — which is where Gradle drops its reports
+# (`android/build/reports/problems/problems-report.html` was being committed).
+/android/build/
+/android/app/build/
+/android/.gradle/
+/android/key.properties
+*.jks
+*.keystore
+
+# Never commit a private key. `assets/ca.crt` is the relay's public CA
+# **certificate** and belongs in the repository; the matching `ca.key` never does.
+*.key
+*.pem
+
+# Flutter writes golden failure diffs here; they are diagnostic throwaways, not
+# baselines (the baselines live in test/goldens/).
+/test/failures/
