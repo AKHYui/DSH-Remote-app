@@ -10,7 +10,7 @@ yourself** (HTTPS + WSS) and never connects to the desktop directly, so it works
 without a public IP. It needs two companion components: the
 [relay backend](https://github.com/AKHYui/DSH-Remote-backend) and the
 [desktop plugin](https://github.com/AKHYui/DSH-Remote-plugin). The wire protocol between all three is
-defined by `docs/PROTOCOL.md` in the backend repository.
+defined by [docs/PROTOCOL.md](https://github.com/AKHYui/DSH-Remote-backend/blob/main/docs/PROTOCOL.md) in the backend repository.
 
 Current version **0.2.0** (`pubspec.yaml`: `version: 0.2.0+5`). The launcher label is `DSH Remote` and
 the applicationId is `com.dshremote.dsh_remote_app` — the id is kept stable across releases so an

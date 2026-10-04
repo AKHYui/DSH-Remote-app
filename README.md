@@ -9,7 +9,7 @@ DSH Remote 是这条链路的手机端：Flutter 客户端，只与**你自己�
 不直连桌面，所以家用 NAT、没有公网 IP 也能用。它需要另外两个组件配套运行：
 [中继后端](https://github.com/AKHYui/DSH-Remote-backend) 与
 [桌面插件](https://github.com/AKHYui/DSH-Remote-plugin)；三者之间的线协议由后端仓库的
-`docs/PROTOCOL.md` 定义。
+[`docs/PROTOCOL.md`](https://github.com/AKHYui/DSH-Remote-backend/blob/main/docs/PROTOCOL.md) 定义。
 
 当前版本 **0.2.0**（`pubspec.yaml`：`version: 0.2.0+5`）。启动器显示名为 `DSH Remote`，
 applicationId 是 `com.dshremote.dsh_remote_app`——升级时保持该 id，覆盖安装不会丢失配对与设置。
