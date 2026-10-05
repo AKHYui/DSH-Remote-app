@@ -13,8 +13,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
+import '../api/relay_events.dart';
 import '../chat/attachments.dart';
 import '../chat/transcript.dart';
+import '../state/app_controller.dart';
 import '../state/providers.dart';
 import '../theme.dart';
 import 'app_drawer.dart';
@@ -602,11 +604,40 @@ class _SessionViewState extends ConsumerState<SessionView>
   bool _sending = false;
   String? _error;
 
+  /// Whether the follow stream has been silent long enough that a nudge from the
+  /// other channel counts as evidence it is stale.
+  ///
+  /// Set by a timer rather than by comparing `DateTime.now()`, because widget tests
+  /// advance timers and not the wall clock — a rule that cannot be tested is a rule
+  /// that will regress.
+  bool _streamLooksStale = false;
+  Timer? _staleTimer;
+  Timer? _gapTimer;
+  Timer? _watchdog;
+
+  /// How long the follow stream may stay silent before a nudge means "stale".
+  ///
+  /// A quiet conversation is normal, so silence alone proves nothing; it only
+  /// becomes evidence when the *other* channel says the desktop moved, because a
+  /// healthy stream delivers an append within milliseconds of it happening.
+  static const Duration _staleAfter = Duration(seconds: 10);
+
+  /// Rate limit for recoveries, doubling up to [_maxRecoveryGap] while they keep
+  /// producing no traffic, and reset by any delivered frame.
+  Duration _recoveryGap = const Duration(seconds: 5);
+  static const Duration _maxRecoveryGap = Duration(seconds: 60);
+  bool _recoveryBlocked = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _subscribe());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _subscribe();
+      // Cheap and only useful while something of ours is waiting for the desktop:
+      // the staleness flags themselves are timers, see [_noteFrame].
+      _watchdog = Timer.periodic(const Duration(seconds: 5), (_) => _checkUnconfirmed());
+    });
   }
 
   @override
@@ -614,6 +645,9 @@ class _SessionViewState extends ConsumerState<SessionView>
     WidgetsBinding.instance.removeObserver(this);
     _generation++;
     _retry?.cancel();
+    _watchdog?.cancel();
+    _staleTimer?.cancel();
+    _gapTimer?.cancel();
     _subscription?.cancel();
     _input.dispose();
     _scroll.dispose();
@@ -627,18 +661,83 @@ class _SessionViewState extends ConsumerState<SessionView>
     // whatever it had until the App is restarted. Resubscribing on resume is the
     // cheap, deterministic recovery — `session.follow` always reopens with an
     // authoritative snapshot.
-    if (state == AppLifecycleState.resumed) unawaited(_subscribe());
+    if (state == AppLifecycleState.resumed) _subscribe();
   }
 
-  Future<void> _subscribe() async {
-    final generation = ++_generation;
-    await _subscription?.cancel();
-    _subscription = null;
+  /// The follow stream delivered something: restart the silence clock.
+  ///
+  /// Traffic is also proof the stream works, so it clears the recovery backoff.
+  void _noteFrame() {
+    _streamLooksStale = false;
+    _recoveryGap = const Duration(seconds: 5);
+    _staleTimer?.cancel();
+    _staleTimer = Timer(_staleAfter, () {
+      if (mounted) _streamLooksStale = true;
+    });
+  }
 
-    // Cancelling can take a moment, and the screen may be gone by then — leaving
-    // right after sending (or a lifecycle event firing during teardown) used to
-    // reach `ref` on a disposed widget and throw.
-    if (!mounted || generation != _generation) return;
+  /// The event socket says this session moved.
+  ///
+  /// A healthy follow stream delivers an append within milliseconds of the desktop
+  /// making it, so "the socket reported activity, the follow stream has been silent
+  /// for seconds" means the follow stream is stale — the exact state that used to
+  /// require restarting the app or switching sessions, because a half-open HTTP
+  /// response never errors and never ends.
+  void _onSessionSignal(SessionSignal signal) {
+    if (!mounted || signal.sessionId != widget.sessionId) return;
+    if (!_streamLooksStale) return;
+    _recoverStream('the event socket reported activity');
+  }
+
+  /// Re-opens the stream when a message we sent is still unconfirmed.
+  ///
+  /// Belt and braces for the case where *both* channels died (a network change, a
+  /// suspended app): the desktop may have answered while the phone was away, and
+  /// the sender's own message must not sit behind a dead socket until a restart.
+  void _checkUnconfirmed() {
+    if (!mounted || !_streamLooksStale) return;
+    if (!_transcript.items.any((item) => item is PendingUserBubble)) return;
+    _recoverStream('a sent message is still unconfirmed');
+  }
+
+  /// Re-opens the follow stream, rate limited.
+  ///
+  /// Recovery is not free — it re-fetches the snapshot — so a stream that keeps
+  /// going quiet backs off up to a minute, and any delivered frame resets the
+  /// backoff because it proves the stream works.
+  void _recoverStream(String reason) {
+    if (_recoveryBlocked) return;
+    _recoveryBlocked = true;
+    _recoveryGap = Duration(
+      seconds: (_recoveryGap.inSeconds * 2).clamp(5, _maxRecoveryGap.inSeconds),
+    );
+    _gapTimer?.cancel();
+    _gapTimer = Timer(_recoveryGap, () {
+      if (mounted) _recoveryBlocked = false;
+    });
+    debugPrint('[dsh-remote] re-opening the follow stream: $reason');
+    _subscribe();
+    // The stream carries the conversation; the *list* carries the per-session
+    // running flag. A turn that ended while the stream was dead would otherwise
+    // leave the composer spinning with its cancel button showing.
+    unawaited(ref.read(appControllerProvider.notifier).loadSessions());
+  }
+
+  /// (Re)opens the follow stream.
+  ///
+  /// Deliberately synchronous: cancelling the previous subscription is
+  /// fire-and-forget. Awaiting that cancel used to leave a window in which the view
+  /// had no subscription at all — during which a recovery could be requested again
+  /// and its own `follow` call would land after the fact. The generation counter
+  /// already neuters any frame still in flight from the old stream, so the cancel
+  /// does not need to gate the re-open.
+  void _subscribe() {
+    final generation = ++_generation;
+    final previous = _subscription;
+    _subscription = null;
+    unawaited(previous?.cancel());
+
+    if (!mounted) return;
 
     final client = ref.read(appControllerProvider.notifier).client;
     if (client == null) {
@@ -647,12 +746,17 @@ class _SessionViewState extends ConsumerState<SessionView>
     }
     setState(() => _error = null);
 
+    // A fresh subscription restarts the silence clock, otherwise the first nudge
+    // from the event socket would immediately declare it stale again.
+    _noteFrame();
+
     final deviceId = ref.read(appControllerProvider).activeDeviceId;
     _subscription = client.follow(deviceId, widget.sessionId, maxMessages: 60).listen(
       (frame) {
         if (!mounted || generation != _generation) return;
         setState(() {
           _live = true;
+          _noteFrame();
           if (frame.kind == 'snapshot') {
             _transcript.applySnapshot(frame.snapshotEvents);
           } else if (frame.kind == 'event') {
@@ -718,7 +822,7 @@ class _SessionViewState extends ConsumerState<SessionView>
         // A stream that died while the phone was in the background never notices,
         // and the only recovery used to be restarting the App. Reopening it costs
         // one snapshot and guarantees the view is actually live.
-        unawaited(_subscribe());
+        _subscribe();
       }
     } finally {
       // Same rule as the welcome view: the composer must never be left busy.
@@ -738,6 +842,20 @@ class _SessionViewState extends ConsumerState<SessionView>
     final theme = Theme.of(context);
     final state = ref.watch(appControllerProvider);
     final session = state.activeSession;
+
+    // Two independent liveness clues for a stream that cannot report its own death:
+    // the event socket saying this session moved (see [_onSessionSignal]), and the
+    // event socket coming back at all — a network blip that killed it almost
+    // certainly killed the follow stream too.
+    ref.listen<AppState>(appControllerProvider, (previous, next) {
+      final signal = next.lastSignal;
+      if (signal != null && !identical(signal, previous?.lastSignal)) {
+        _onSessionSignal(signal);
+      }
+      final reconnected = next.eventsState == RelayEventsState.connected &&
+          previous?.eventsState != RelayEventsState.connected;
+      if (reconnected && !_live) _recoverStream('the event socket reconnected');
+    });
 
     return Column(
       children: [

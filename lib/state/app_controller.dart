@@ -19,6 +19,18 @@ import '../chat/attachments.dart';
 import '../chat/transcript.dart';
 import 'settings.dart';
 
+/// One "this session moved" nudge from the event socket.
+///
+/// [tick] increments per emission so two signals for the same session are never
+/// identical objects; consumers react with `identical()`, which is what they want
+/// — a repeated signal is still news.
+class SessionSignal {
+  const SessionSignal({required this.sessionId, required this.tick});
+
+  final String sessionId;
+  final int tick;
+}
+
 class AppState {
   const AppState({
     this.loading = true,
@@ -34,6 +46,7 @@ class AppState {
     this.sessionsLoading = false,
     this.sessionsError,
     this.activeSessionId,
+    this.lastSignal,
     this.workspace = '',
     this.creatingSession = false,
     this.attachments = const [],
@@ -59,6 +72,19 @@ class AppState {
 
   /// `null` means the composer is starting a new session rather than replying.
   final String? activeSessionId;
+
+  /// A nudge from the event socket: this session moved on the desktop.
+  ///
+  /// The `session.follow` stream is a long-lived HTTP response, and a half-open
+  /// one delivers nothing and reports nothing — no error, no end, so the reader
+  /// waits forever. The event socket is the app's *other* channel and it does
+  /// police itself (it closes after 55s of silence, see `RelayEvents`), so its
+  /// `session.activity` / `session.status` frames are what let the open chat screen
+  /// notice that the desktop produced something its follow stream never delivered.
+  ///
+  /// [tick] distinguishes two signals for the same session; consumers compare
+  /// identity rather than contents.
+  final SessionSignal? lastSignal;
 
   /// Working directory a new session will be created in. Empty means the
   /// harness default.
@@ -142,6 +168,7 @@ class AppState {
     bool clearSessionsError = false,
     String? activeSessionId,
     bool clearActiveSession = false,
+    SessionSignal? lastSignal,
     String? workspace,
     bool? creatingSession,
     List<PendingAttachment>? attachments,
@@ -161,6 +188,7 @@ class AppState {
       sessionsLoading: sessionsLoading ?? this.sessionsLoading,
       sessionsError: clearSessionsError ? null : (sessionsError ?? this.sessionsError),
       activeSessionId: clearActiveSession ? null : (activeSessionId ?? this.activeSessionId),
+      lastSignal: lastSignal ?? this.lastSignal,
       workspace: workspace ?? this.workspace,
       creatingSession: creatingSession ?? this.creatingSession,
       attachments: attachments ?? this.attachments,
@@ -205,6 +233,7 @@ class AppController extends StateNotifier<AppState> {
   StreamSubscription<RelayEvent>? _eventSubscription;
   Timer? _poll;
   final Map<String, ApprovalAsk> _pendingAsks = {};
+  int _signalTick = 0;
 
   String _baseUrl = '';
   String _token = '';
@@ -678,7 +707,7 @@ class AppController extends StateNotifier<AppState> {
       token: client.token,
       httpClient: newRelayHttpClient(context),
     );
-    _eventSubscription = _events!.events.listen(_onEvent);
+    _eventSubscription = _events!.events.listen(handleEvent);
     _events!.state.listen((next) {
       if (!mounted) return;
       state = state.copyWith(
@@ -714,7 +743,11 @@ class AppController extends StateNotifier<AppState> {
     }
   }
 
-  void _onEvent(RelayEvent event) {
+  /// Handles one frame from the event socket.
+  ///
+  /// Public so tests can drive it directly: exercising this through a real socket
+  /// would mean standing up a WebSocket server for a five-line dispatch table.
+  void handleEvent(RelayEvent event) {
     if (!mounted) return;
     switch (event.topic) {
       case 'approval.ask':
@@ -734,8 +767,14 @@ class AppController extends StateNotifier<AppState> {
         }
       case 'session.status':
       case 'session.activity':
-        // The open chat screen reacts to these through its own listener.
-        break;
+        // "The desktop moved." The open chat screen compares this against what its
+        // own (silence-prone) follow stream has delivered — see [AppState.lastSignal].
+        final sessionId = asString(event.payload['sessionId']);
+        if (sessionId.isEmpty) return;
+        _signalTick += 1;
+        state = state.copyWith(
+          lastSignal: SessionSignal(sessionId: sessionId, tick: _signalTick),
+        );
       default:
         break;
     }

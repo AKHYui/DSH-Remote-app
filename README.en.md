@@ -12,7 +12,7 @@ without a public IP. It needs two companion components: the
 [desktop plugin](https://github.com/AKHYui/DSH-Remote-plugin). The wire protocol between all three is
 defined by [docs/PROTOCOL.md](https://github.com/AKHYui/DSH-Remote-backend/blob/main/docs/PROTOCOL.md) in the backend repository.
 
-Current version **0.2.0** (`pubspec.yaml`: `version: 0.2.0+5`). The launcher label is `DSH Remote` and
+Current version **0.2.1** (`pubspec.yaml`: `version: 0.2.1+6`). The launcher label is `DSH Remote` and
 the applicationId is `com.dshremote.dsh_remote_app` — the id is kept stable across releases so an
 in-place upgrade preserves pairing and settings.
 
@@ -54,7 +54,7 @@ flutter pub get
 
 ```bash
 flutter analyze     # expected: No issues found!
-flutter test        # 233 cases; needs no device and no network
+flutter test        # 239 cases; needs no device and no network
 ```
 
 ### 3. Build the release APK
@@ -150,7 +150,7 @@ SharedPreferences and never enters the repository.
 | Feature | Notes |
 |---|---|
 | Session list | Sessions grouped by workspace; subagent sessions and never-prompted (empty) tasks are filtered out |
-| Live stream | Opening a session subscribes to `session.follow`: snapshot first, then live events; reconnects on its own, and again when the app returns to the foreground |
+| Live stream | Opening a session subscribes to `session.follow`: snapshot first, then live events; reconnects on its own, again when the app returns to the foreground, and **also when a half-open connection dies silently** — see Operations and troubleshooting |
 | Sending | Text appears as soon as it is accepted (local echo, reconciled with the durable event); the current turn can be cancelled |
 | Attachments | Images are inlined in `session.prompt`; anything else is uploaded first for a `receiptId` and sent with the message |
 | Model | Switch provider / model per session; the options come from `model.catalog` |
@@ -169,6 +169,7 @@ SharedPreferences and never enters the repository.
 | Symptom | What to do |
 |---|---|
 | You need logs | `adb logcat` (Flutter output is under the `flutter` tag); the settings screen also shows the event-channel state and the last error |
+| The desktop already answered but the phone still spins or never refreshes | The follow stream is a long-lived connection, and **a dead one need not report anything**: a half-open HTTP response neither errors nor ends. The app notices and re-opens it by itself — when the event socket says the session moved, or when a message of yours stays unconfirmed, it re-fetches an authoritative snapshot; `adb logcat` shows a `[dsh-remote] re-opening the follow stream: …` line. If nothing refreshes within 30s, check that the relay and the desktop plugin are online (the settings screen shows the event-channel state) |
 | A release build cannot reach the network | The main manifest is missing `android.permission.INTERNET`. The debug and profile manifests declare it, the release one does not; verify with `apkanalyzer manifest permissions` |
 | A session archived on the desktop still shows in the list | Opening the drawer reloads the list; if it still shows, confirm the desktop plugin was restarted (plugin source changes only take effect after a DSH restart) |
 | The emulator shows a black screen and the log says `Width is zero. 0,0` | Its primary ABI is x86_64 but the universal package is installed; rebuild with `--target-platform android-x64` |
@@ -179,7 +180,7 @@ SharedPreferences and never enters the repository.
 ## Tests
 
 ```bash
-flutter test                                    # 233 cases: no device, no network
+flutter test                                    # 239 cases: no device, no network
 
 # 9 integration checks against a live relay (needs a real relay and a device token)
 export DSH_LIVE_RELAY='https://relay.example.com:58443'
@@ -198,7 +199,7 @@ lib/api/     relay HTTP + SSE/WebSocket client, models, TLS trust and CA fingerp
 lib/chat/    event stream → transcript, Markdown subset, attachment contract (pure Dart)
 lib/state/   settings (token in the Keystore) and application state
 lib/ui/      setup, device and task lists, conversation view, settings, attachment picking
-test/        233 unit / widget cases plus the 9 live-relay checks
+test/        239 unit / widget cases plus the 9 live-relay checks
 tool/        verify_apk.ps1 (pre-delivery check), make_icons.py and icon/ (icon source art)
 android/     the Android project: applicationId, manifest, launcher icon resources
 assets/      ca.crt (the relay's public CA certificate)

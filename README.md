@@ -11,7 +11,7 @@ DSH Remote 是这条链路的手机端：Flutter 客户端，只与**你自己�
 [桌面插件](https://github.com/AKHYui/DSH-Remote-plugin)；三者之间的线协议由后端仓库的
 [`docs/PROTOCOL.md`](https://github.com/AKHYui/DSH-Remote-backend/blob/main/docs/PROTOCOL.md) 定义。
 
-当前版本 **0.2.0**（`pubspec.yaml`：`version: 0.2.0+5`）。启动器显示名为 `DSH Remote`，
+当前版本 **0.2.1**（`pubspec.yaml`：`version: 0.2.1+6`）。启动器显示名为 `DSH Remote`，
 applicationId 是 `com.dshremote.dsh_remote_app`——升级时保持该 id，覆盖安装不会丢失配对与设置。
 
 ## 架构
@@ -51,7 +51,7 @@ flutter pub get
 
 ```bash
 flutter analyze     # 期望输出：No issues found!
-flutter test        # 233 个用例，不需要设备，也不访问网络
+flutter test        # 239 个用例，不需要设备，也不访问网络
 ```
 
 ### 3. 构建 release APK
@@ -140,7 +140,7 @@ python tool/make_icons.py     # 需要 Pillow
 | 功能 | 说明 |
 |---|---|
 | 会话列表 | 按工作区分组列出会话；自动过滤子代理会话，以及从未发过消息的空任务 |
-| 实时流 | 打开会话即订阅 `session.follow`：先取快照再收实时事件；断线自动重订阅，回到前台亦重订阅 |
+| 实时流 | 打开会话即订阅 `session.follow`：先取快照再收实时事件；断线自动重订阅，回到前台亦重订阅；**半开（静默死掉）的连接也能被发现并重开**，见「运维与排错」 |
 | 发消息 | 文本发出即上屏（本地回声，收到持久事件后对账）；可中止当前回合 |
 | 附件 | 图片内嵌在 `session.prompt`（image 块）；其它文件先上传换取 `receiptId`，再随消息发送 |
 | 模型 | 会话内切换 provider / model，选项来自 `model.catalog` |
@@ -158,6 +158,7 @@ python tool/make_icons.py     # 需要 Pillow
 
 | 现象 | 处理 |
 |---|---|
+| 电脑上已经答完，手机上仍转圈 / 不刷新 | 会话流是长连接，**断了不一定报错**：半开的 HTTP 响应既不报错也不结束。App 会自己发现并重开会话流——事件通道说这个会话有新动静、或本机发出的消息迟迟没被确认时，就重取一次权威快照；`adb logcat` 里会有一行 `[dsh-remote] re-opening the follow stream: …`。若 30 秒内仍未刷新，检查中继与桌面插件是否在线（设置页有事件通道状态） |
 | 需要查看日志 | `adb logcat`（Flutter 输出在 `flutter` 标签下）；设置页会显示事件通道状态与最近一次错误 |
 | release 包无法联网 | 主 manifest 缺少 `android.permission.INTERNET`。debug / profile 的 manifest 自带该权限，release 不带；用 `apkanalyzer manifest permissions` 核对 |
 | 电脑上刚归档的会话仍出现在列表 | 打开抽屉会重新拉取列表；若仍然出现，确认桌面插件已重启（插件源码改动需重启 DSH 才生效） |
@@ -169,7 +170,7 @@ python tool/make_icons.py     # 需要 Pillow
 ## 测试
 
 ```bash
-flutter test                                    # 233 个用例：不需要设备，也不访问网络
+flutter test                                    # 239 个用例：不需要设备，也不访问网络
 
 # 对活中继的 9 项集成检查（需要真实中继与设备令牌）
 export DSH_LIVE_RELAY='https://relay.example.com:58443'
@@ -188,7 +189,7 @@ lib/api/     中继 HTTP + SSE/WebSocket 客户端、数据模型、TLS 信任�
 lib/chat/    事件流 → 会话记录、Markdown 子集、附件契约（纯 Dart，重点测试对象）
 lib/state/   设置（令牌进 Keystore）与应用状态
 lib/ui/      配对、设备与任务列表、会话界面、设置页、附件选择
-test/        233 个单测 / widget 用例，以及对活中继的 9 项检查
+test/        239 个单测 / widget 用例，以及对活中继的 9 项检查
 tool/        verify_apk.ps1（交付前自检）、make_icons.py 与 icon/（图标源图）
 android/     Android 工程：applicationId、清单、启动器图标资源
 assets/      ca.crt（中继的公开 CA 证书）
