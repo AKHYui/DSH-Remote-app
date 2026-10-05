@@ -352,6 +352,31 @@ class SessionEvent {
       type == 'system/message';
 }
 
+/// Parses the `records[]` of a `session.page` result or of a follow snapshot.
+///
+/// Both carry the same shape — `{type: 'event', event: {seq, type, time, data}}` —
+/// so one parser serves the opening snapshot and every older page fetched while
+/// scrolling back.
+List<SessionEvent> sessionEventsFromRecords(Object? records, {String sessionId = ''}) {
+  if (records is! List) return const [];
+  final out = <SessionEvent>[];
+  for (final record in records) {
+    final map = asMap(record);
+    final event = asMap(map['event']);
+    if (event.isEmpty) continue;
+    out.add(
+      SessionEvent(
+        sessionId: sessionId,
+        seq: asInt(event['seq']),
+        type: asString(event['type']),
+        time: asInt(event['time']),
+        data: asMap(event['data']),
+      ),
+    );
+  }
+  return out;
+}
+
 /// A frame from the `session.follow` stream.
 ///
 /// `session.follow` always opens with a `snapshot`, so a client that reconnects
@@ -365,26 +390,17 @@ class FollowFrame {
 
   Map<String, dynamic> get snapshot => asMap(raw);
 
-  List<SessionEvent> get snapshotEvents {
-    final records = raw['records'];
-    if (records is! List) return const [];
-    final out = <SessionEvent>[];
-    for (final record in records) {
-      final map = asMap(record);
-      final event = asMap(map['event']);
-      if (event.isEmpty) continue;
-      out.add(
-        SessionEvent(
-          sessionId: asString(asMap(raw['header'])['id']),
-          seq: asInt(event['seq']),
-          type: asString(event['type']),
-          time: asInt(event['time']),
-          data: asMap(event['data']),
-        ),
+  List<SessionEvent> get snapshotEvents => sessionEventsFromRecords(
+        raw['records'],
+        sessionId: asString(asMap(raw['header'])['id']),
       );
-    }
-    return out;
-  }
+
+  /// Whether the desktop holds records older than this snapshot.
+  ///
+  /// The snapshot is bounded by bytes, not just by `maxMessages` — a long turn can
+  /// fill it on its own — so this is what tells the view there is history to fetch
+  /// when the user scrolls back.
+  bool get hasMore => raw['hasMore'] == true;
 
   int get cursor => asInt(raw['cursor']);
 

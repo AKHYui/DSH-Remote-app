@@ -435,6 +435,22 @@ final class SystemNote extends ChatItem {
 class Transcript {
   final List<ChatItem> items = [];
 
+  /// Durable events loaded so far, oldest first.
+  ///
+  /// The rendered [items] are derived from this, which is what makes loading an
+  /// older page trivial: insert the older records and rebuild. Mapping them
+  /// incrementally instead would have to guess whether the page boundary falls in
+  /// the middle of a merge (a `tool/call` here, its `tool/result` in the page
+  /// above), and every merge rule would need its own boundary case.
+  final List<SessionEvent> _events = [];
+
+  /// Whether the desktop holds records older than [_events].
+  ///
+  /// A follow snapshot and a `session.page` are both bounded by bytes — one long
+  /// turn can fill the whole window — so the app cannot assume that what it got is
+  /// the beginning of the conversation. This is the `hasMore` both of them report.
+  bool hasOlder = false;
+
   /// Text the model is streaming before the message is committed.
   String streamingText = '';
 
@@ -444,6 +460,12 @@ class Transcript {
   final Map<String, int> _toolCallIndex = {};
 
   bool get isEmpty => items.isEmpty && streamingText.isEmpty;
+
+  /// The sequence number of the oldest loaded record; 0 when nothing is loaded.
+  int get oldestSeq => _events.isEmpty ? 0 : _events.first.seq;
+
+  /// How many durable records are loaded (diagnostics and tests).
+  int get loadedCount => _events.length;
 
   /// Show a prompt immediately after the relay accepted it.
   ///
@@ -475,6 +497,12 @@ class Transcript {
   }
 
   void clear() {
+    _events.clear();
+    hasOlder = false;
+    _clearItems();
+  }
+
+  void _clearItems() {
     items.clear();
     _toolCallIndex.clear();
     streamingText = '';
@@ -487,10 +515,41 @@ class Transcript {
   /// local echoes the snapshot does not cover yet. Dropping those was a real
   /// hole: a reconnect landing between "prompt accepted" and "durable event
   /// appended" made the message the user just sent vanish.
-  void applySnapshot(Iterable<SessionEvent> events) {
+  void applySnapshot(Iterable<SessionEvent> events, {bool hasMore = false}) {
+    _events
+      ..clear()
+      ..addAll(events);
+    hasOlder = hasMore;
+    _rebuild();
+  }
+
+  /// Inserts an older page in front of what is already loaded.
+  ///
+  /// Returns how many records were actually new, so the caller can tell "the
+  /// desktop had nothing older" from "those were already loaded" without guessing.
+  /// Records that are not older than the current window are dropped: the live
+  /// stream owns anything newer, and a page fetched with a stale cursor can race
+  /// with it.
+  int prependOlder(Iterable<SessionEvent> events, {bool hasMore = false}) {
+    final oldest = oldestSeq;
+    final known = {for (final event in _events) event.seq};
+    final fresh = <SessionEvent>[
+      for (final event in events)
+        if (event.seq > 0 && !known.contains(event.seq) && (oldest == 0 || event.seq <= oldest))
+          event,
+    ];
+    hasOlder = hasMore;
+    if (fresh.isEmpty) return 0;
+    _events.insertAll(0, fresh);
+    _rebuild();
+    return fresh.length;
+  }
+
+  /// Re-derives the rendered items from [_events], keeping unconfirmed echoes.
+  void _rebuild() {
     final pending = items.whereType<PendingUserBubble>().toList(growable: false);
-    clear();
-    for (final event in events) {
+    _clearItems();
+    for (final event in _events) {
       _append(event);
     }
     for (final item in pending) {
@@ -503,6 +562,7 @@ class Transcript {
   /// Appends one live event, ignoring replays.
   void applyEvent(SessionEvent event) {
     if (event.seq > 0 && event.seq <= _maxSeq) return;
+    _events.add(event);
     _append(event);
   }
 

@@ -602,6 +602,8 @@ class _SessionViewState extends ConsumerState<SessionView>
   int _generation = 0;
   bool _live = false;
   bool _sending = false;
+  bool _loadingOlder = false;
+  String? _olderError;
   String? _error;
 
   /// Whether the follow stream has been silent long enough that a nudge from the
@@ -632,6 +634,7 @@ class _SessionViewState extends ConsumerState<SessionView>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _scroll.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _subscribe();
       // Cheap and only useful while something of ours is waiting for the desktop:
@@ -648,10 +651,59 @@ class _SessionViewState extends ConsumerState<SessionView>
     _watchdog?.cancel();
     _staleTimer?.cancel();
     _gapTimer?.cancel();
+    _scroll.removeListener(_onScroll);
     _subscription?.cancel();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// Loads the previous page when the user reaches the older end of the list.
+  ///
+  /// The list is reversed, so "scrolling back through history" means approaching
+  /// `maxScrollExtent`. The snapshot that opens a follow is bounded by bytes — one
+  /// long turn can fill it — so without this the conversation simply stopped.
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    if (position.pixels >= position.maxScrollExtent - 320) unawaited(_loadOlder());
+  }
+
+  Future<void> _loadOlder() async {
+    if (_loadingOlder || !_transcript.hasOlder) return;
+    final client = ref.read(appControllerProvider.notifier).client;
+    final before = _transcript.oldestSeq;
+    if (client == null || before <= 0) return;
+    final generation = _generation;
+    setState(() => _loadingOlder = true);
+    try {
+      final page = await client.page(
+        ref.read(appControllerProvider).activeDeviceId,
+        widget.sessionId,
+        // `throughSeq` is the inclusive end of the window, so the record before the
+        // oldest one we hold is where the previous page starts.
+        throughSeq: before - 1,
+        beforeSeq: before,
+        maxMessages: 60,
+      );
+      if (!mounted || generation != _generation) return;
+      final records = sessionEventsFromRecords(
+        page['records'],
+        sessionId: widget.sessionId,
+      );
+      setState(() {
+        _transcript.prependOlder(records, hasMore: page['hasMore'] == true);
+      });
+    } on Object catch (error) {
+      if (!mounted || generation != _generation) return;
+      // A failed page is not fatal: the loaded history stays on screen and the
+      // user can pull again.
+      setState(() => _olderError = '$error');
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _loadingOlder = false);
+      }
+    }
   }
 
   @override
@@ -758,7 +810,7 @@ class _SessionViewState extends ConsumerState<SessionView>
           _live = true;
           _noteFrame();
           if (frame.kind == 'snapshot') {
-            _transcript.applySnapshot(frame.snapshotEvents);
+            _transcript.applySnapshot(frame.snapshotEvents, hasMore: frame.hasMore);
           } else if (frame.kind == 'event') {
             final event = frame.event;
             if (event != null) _transcript.applyEvent(event);
@@ -893,7 +945,15 @@ class _SessionViewState extends ConsumerState<SessionView>
       );
     }
 
-    final itemCount = rows.length + (streaming.isEmpty ? 0 : 1);
+    // One extra row past the oldest message: the "older end" of a reversed list.
+    // It is where the user finds out whether scrolling back did anything.
+    final footer = _HistoryFooter(
+      loading: _loadingOlder,
+      exhausted: !_transcript.hasOlder,
+      error: _olderError,
+      onRetry: _loadOlder,
+    );
+    final itemCount = rows.length + (streaming.isEmpty ? 0 : 1) + 1;
 
     return ListView.builder(
       controller: _scroll,
@@ -901,6 +961,7 @@ class _SessionViewState extends ConsumerState<SessionView>
       padding: const EdgeInsets.fromLTRB(AppGap.page, 4, AppGap.page, 8),
       itemCount: itemCount,
       itemBuilder: (context, index) {
+        if (index == itemCount - 1) return footer;
         if (streaming.isNotEmpty) {
           if (index == 0) return _StreamingBubble(text: streaming);
           return _buildRow(theme, rows[reverseIndexOf(rows.length, index - 1)]);
@@ -1479,6 +1540,59 @@ class _StreamingBubble extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The "older end" row of the conversation.
+///
+/// A followed session opens with a byte-bounded window (a long turn can fill it by
+/// itself), so the top of the list is not necessarily the beginning of the task.
+/// This row is how the user learns which of the three it is: more to fetch, busy
+/// fetching, or genuinely the start.
+class _HistoryFooter extends StatelessWidget {
+  const _HistoryFooter({
+    required this.loading,
+    required this.exhausted,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final bool loading;
+  final bool exhausted;
+  final String? error;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final Widget child;
+    if (loading) {
+      child = Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 8),
+          Text('正在加载更早的消息…', style: theme.textTheme.labelSmall),
+        ],
+      );
+    } else if (error != null) {
+      child = TextButton(
+        onPressed: () => unawaited(onRetry()),
+        child: Text('更早的消息没取到，点这里重试', style: theme.textTheme.labelSmall),
+      );
+    } else if (exhausted) {
+      child = Text('已经到开头了', style: theme.textTheme.labelSmall);
+    } else {
+      child = Text('往上滑看更早的消息', style: theme.textTheme.labelSmall);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(child: child),
     );
   }
 }

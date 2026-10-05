@@ -11,7 +11,7 @@ DSH Remote 是这条链路的手机端：Flutter 客户端，只与**你自己�
 [桌面插件](https://github.com/AKHYui/DSH-Remote-plugin)；三者之间的线协议由后端仓库的
 [`docs/PROTOCOL.md`](https://github.com/AKHYui/DSH-Remote-backend/blob/main/docs/PROTOCOL.md) 定义。
 
-当前版本 **0.2.1**（`pubspec.yaml`：`version: 0.2.1+6`）。启动器显示名为 `DSH Remote`，
+当前版本 **0.2.2**（`pubspec.yaml`：`version: 0.2.2+7`）。启动器显示名为 `DSH Remote`，
 applicationId 是 `com.dshremote.dsh_remote_app`——升级时保持该 id，覆盖安装不会丢失配对与设置。
 
 ## 架构
@@ -51,7 +51,7 @@ flutter pub get
 
 ```bash
 flutter analyze     # 期望输出：No issues found!
-flutter test        # 239 个用例，不需要设备，也不访问网络
+flutter test        # 246 个用例，不需要设备，也不访问网络
 ```
 
 ### 3. 构建 release APK
@@ -140,6 +140,7 @@ python tool/make_icons.py     # 需要 Pillow
 | 功能 | 说明 |
 |---|---|
 | 会话列表 | 按工作区分组列出会话；自动过滤子代理会话，以及从未发过消息的空任务 |
+| 历史记录 | 会话快照按**字节**封顶（一个长回合就能占满整个窗口），所以往上滑会按 `session.page` 自动取更早的一页；列表顶部会显示「往上滑看更早的消息」/「正在加载更早的消息…」/「已经到开头了」 |
 | 实时流 | 打开会话即订阅 `session.follow`：先取快照再收实时事件；断线自动重订阅，回到前台亦重订阅；**半开（静默死掉）的连接也能被发现并重开**，见「运维与排错」 |
 | 发消息 | 文本发出即上屏（本地回声，收到持久事件后对账）；可中止当前回合 |
 | 附件 | 图片内嵌在 `session.prompt`（image 块）；其它文件先上传换取 `receiptId`，再随消息发送 |
@@ -170,7 +171,7 @@ python tool/make_icons.py     # 需要 Pillow
 ## 测试
 
 ```bash
-flutter test                                    # 239 个用例：不需要设备，也不访问网络
+flutter test                                    # 246 个用例：不需要设备，也不访问网络
 
 # 对活中继的 9 项集成检查（需要真实中继与设备令牌）
 export DSH_LIVE_RELAY='https://relay.example.com:58443'
@@ -189,7 +190,7 @@ lib/api/     中继 HTTP + SSE/WebSocket 客户端、数据模型、TLS 信任�
 lib/chat/    事件流 → 会话记录、Markdown 子集、附件契约（纯 Dart，重点测试对象）
 lib/state/   设置（令牌进 Keystore）与应用状态
 lib/ui/      配对、设备与任务列表、会话界面、设置页、附件选择
-test/        239 个单测 / widget 用例，以及对活中继的 9 项检查
+test/        246 个单测 / widget 用例，以及对活中继的 9 项检查
 tool/        verify_apk.ps1（交付前自检）、make_icons.py 与 icon/（图标源图）
 android/     Android 工程：applicationId、清单、启动器图标资源
 assets/      ca.crt（中继的公开 CA 证书）
