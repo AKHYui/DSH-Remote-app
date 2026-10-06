@@ -4,7 +4,7 @@ description: >-
   The wire contract lives in the relay repository (DSH-Remote-backend,
   docs/PROTOCOL.md).
 publish_to: "none"
-version: 0.2.2+7
+version: 0.2.3+8
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -40,3 +40,8 @@ flutter:
     # relying on the platform store: on Android 7+ an app does not trust user
     # installed CAs by default, and `SecurityContext` sidesteps that entirely.
     - assets/ca.crt
+    # The app icon artwork, shown as the logo on the welcome screen and in the
+    # drawer header. Generated from `tool/icon/app_icon.png` by downscaling to
+    # 384px — the launcher icons are the same art at their own densities, so the
+    # two never drift as long as both come from that one source image.
+    - assets/logo.png

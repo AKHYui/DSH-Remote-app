@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../state/app_controller.dart';
 import '../state/providers.dart';
+import 'app_logo.dart';
 import '../theme.dart';
 import 'settings_screen.dart';
 
@@ -151,7 +152,7 @@ class _DeviceHeader extends StatelessWidget {
                   color: AppColors.primaryAction,
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: const Icon(Icons.terminal_rounded, size: 17, color: Colors.white),
+                child: const AppLogo(size: 30, radius: 9),
               ),
               const SizedBox(width: 10),
               Text('DSH Remote', style: theme.textTheme.titleSmall),

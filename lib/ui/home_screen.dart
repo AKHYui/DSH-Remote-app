@@ -20,6 +20,7 @@ import '../state/app_controller.dart';
 import '../state/providers.dart';
 import '../theme.dart';
 import 'app_drawer.dart';
+import 'app_logo.dart';
 import 'attachment_picker.dart';
 import 'composer.dart';
 import 'markdown_text.dart';
@@ -509,19 +510,9 @@ class _Hero extends StatelessWidget {
               ),
             ),
           ),
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(21),
-            ),
-            child: const Icon(
-              Icons.terminal_rounded,
-              size: 30,
-              color: AppColors.textPrimary,
-            ),
-          ),
+          // The app icon, not a stand-in glyph: the same artwork the launcher
+          // shows, so the screen the user opens and the icon they tapped match.
+          const AppLogo(size: 72, radius: 18),
         ],
       ),
     );
