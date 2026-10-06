@@ -347,6 +347,7 @@ class SessionSummary {
     this.cwd,
     this.isSubagent = false,
     this.metrics,
+    this.agentPreset = '',
   });
 
   final String sessionId;
@@ -392,6 +393,13 @@ class SessionSummary {
   /// run yet yields an empty (all-zero) reading instead.
   final SessionMetrics? metrics;
 
+  /// The agent preset (mode) this session runs in.
+  ///
+  /// From `projections.values.agentPreset` — the same block the metrics come from,
+  /// so showing the current mode costs nothing. The preset is fixed once the session
+  /// has started, which is why the phone chooses it at creation.
+  final String agentPreset;
+
   /// [updatedAt] as a real time, tolerating either unit.
   ///
   /// Verified against the live harness: `session.list` returns milliseconds
@@ -423,6 +431,7 @@ class SessionSummary {
       cwd: json['cwd'] as String?,
       isSubagent: asMap(values['subagent']).isNotEmpty,
       metrics: SessionMetrics.fromProjections(projections),
+      agentPreset: asString(values['agentPreset']),
     );
   }
 

@@ -27,6 +27,7 @@ import 'composer.dart';
 import 'markdown_text.dart';
 import 'model_picker.dart';
 import 'process_timeline.dart';
+import 'workspace_sheet.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -343,58 +344,7 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> with _AttachmentPicke
     }
   }
 
-  Future<void> _pickWorkspace() async {
-    final state = ref.read(appControllerProvider);
-    final chosen = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.only(top: 10, bottom: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceMutedStrong,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(AppGap.page, 0, AppGap.page, 8),
-              child: Text('新任务在哪个工作区运行？', style: Theme.of(context).textTheme.titleMedium),
-            ),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome_outlined, size: 20),
-              title: const Text('让 Harness 自己决定'),
-              subtitle: const Text('不指定工作目录'),
-              trailing: state.workspace.isEmpty
-                  ? const Icon(Icons.check_rounded, color: AppColors.accent, size: 20)
-                  : null,
-              onTap: () => Navigator.of(context).pop(''),
-            ),
-            for (final group in state.workspaces)
-              ListTile(
-                leading: const Icon(Icons.folder_outlined, size: 20),
-                title: Text(group.label),
-                subtitle: Text(group.path, maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: group.path == state.workspace
-                    ? const Icon(Icons.check_rounded, color: AppColors.accent, size: 20)
-                    : null,
-                onTap: () => Navigator.of(context).pop(group.path),
-              ),
-            const SizedBox(height: AppGap.base),
-          ],
-        ),
-      ),
-    );
-    if (chosen != null) {
-      ref.read(appControllerProvider.notifier).setWorkspace(chosen);
-    }
-  }
+  Future<void> _pickWorkspace() => showWorkspaceSheet(context, ref);
 
   @override
   Widget build(BuildContext context) {
@@ -889,6 +839,7 @@ class _SessionViewState extends ConsumerState<SessionView>
 
   /// The numbers spelled out, on tap.
   void _showMetrics(SessionMetrics metrics) {
+    final session = ref.read(appControllerProvider).activeSession;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -896,8 +847,9 @@ class _SessionViewState extends ConsumerState<SessionView>
       // grows with the rows a session has; let it size itself and scroll.
       isScrollControlled: true,
       builder: (_) => _MetricsSheet(
-        title: ref.read(appControllerProvider).activeSession?.label ?? '',
+        title: session?.label ?? '',
         metrics: metrics,
+        preset: session?.agentPreset ?? '',
       ),
     );
   }
@@ -1652,10 +1604,11 @@ class _StatusLine extends StatelessWidget {
 
 /// The same numbers, spelled out, after tapping the status line.
 class _MetricsSheet extends StatelessWidget {
-  const _MetricsSheet({required this.title, required this.metrics});
+  const _MetricsSheet({required this.title, required this.metrics, this.preset = ''});
 
   final String title;
   final SessionMetrics metrics;
+  final String preset;
 
   @override
   Widget build(BuildContext context) {
@@ -1674,7 +1627,7 @@ class _MetricsSheet extends StatelessWidget {
                 Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.labelSmall),
               ],
               const SizedBox(height: 6),
-              for (final row in metricsDetail(metrics))
+              for (final row in metricsDetail(metrics, preset: preset))
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 5),
                   child: Row(

@@ -6,6 +6,8 @@
 /// works the same way, and it saves a navigation level on every switch.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,6 +16,7 @@ import '../state/app_controller.dart';
 import '../state/providers.dart';
 import 'app_logo.dart';
 import '../theme.dart';
+import 'new_session_sheet.dart';
 import 'settings_screen.dart';
 
 class AppDrawer extends ConsumerWidget {
@@ -36,13 +39,20 @@ class AppDrawer extends ConsumerWidget {
               child: _NewTaskButton(
                 busy: state.creatingSession,
                 onTap: () async {
+                  // The sheet needs the drawer gone first: it is its own modal, and
+                  // stacking the two would trap the navigation stack.
                   Navigator.of(context).pop();
-                  final id = await controller.createSession();
-                  if (id == null && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(state.sessionsError ?? '无法新建会话')),
-                    );
-                  }
+                  if (!context.mounted) return;
+                  await showNewSessionSheet(
+                    context,
+                    initialPreset: ref.read(settingsProvider).lastAgentPreset,
+                    // Fire-and-forget: persisting must not hold the sheet open, and a
+                    // keystore that is slow or unavailable is not a reason to block
+                    // creating a task.
+                    onCreated: (presetId) {
+                      unawaited(ref.read(settingsProvider.notifier).rememberPreset(presetId));
+                    },
+                  );
                 },
               ),
             ),

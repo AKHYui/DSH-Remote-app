@@ -48,6 +48,7 @@ class AppState {
     this.activeSessionId,
     this.lastSignal,
     this.workspace = '',
+    this.agentPreset = '',
     this.creatingSession = false,
     this.attachments = const [],
     this.uploadingAttachments = false,
@@ -89,6 +90,13 @@ class AppState {
   /// Working directory a new session will be created in. Empty means the
   /// harness default.
   final String workspace;
+
+  /// Agent preset (mode) a new session will be created with.
+  ///
+  /// Kept here, not only in settings, because a prompt typed on the welcome screen
+  /// creates the session for you — that path must honour the mode the user picked
+  /// rather than silently falling back to the harness default.
+  final String agentPreset;
   final bool creatingSession;
 
   /// Attachments staged in the composer but not yet accepted by the desktop.
@@ -170,6 +178,7 @@ class AppState {
     bool clearActiveSession = false,
     SessionSignal? lastSignal,
     String? workspace,
+    String? agentPreset,
     bool? creatingSession,
     List<PendingAttachment>? attachments,
     bool? uploadingAttachments,
@@ -190,6 +199,7 @@ class AppState {
       activeSessionId: clearActiveSession ? null : (activeSessionId ?? this.activeSessionId),
       lastSignal: lastSignal ?? this.lastSignal,
       workspace: workspace ?? this.workspace,
+      agentPreset: agentPreset ?? this.agentPreset,
       creatingSession: creatingSession ?? this.creatingSession,
       attachments: attachments ?? this.attachments,
       uploadingAttachments: uploadingAttachments ?? this.uploadingAttachments,
@@ -402,17 +412,31 @@ class AppController extends StateNotifier<AppState> {
     state = state.copyWith(workspace: path.trim());
   }
 
+  /// Chooses the mode the next new task will be created with.
+  ///
+  /// Held in app state as well as settings: a prompt typed on the welcome screen
+  /// creates the session itself, and must not quietly use a different mode.
+  void setAgentPreset(String presetId) {
+    state = state.copyWith(agentPreset: presetId.trim());
+  }
+
   /// Creates a session and opens it. Returns the new id, or null on failure.
-  Future<String?> createSession() async {
+  ///
+  /// [agentPreset] is the mode the task should run in (DSH's agent preset id). An
+  /// empty value leaves the choice to the harness's own default, which is what a
+  /// caller that never asked should get.
+  Future<String?> createSession({String agentPreset = ''}) async {
     final client = _client;
     final deviceId = state.activeDeviceId;
     if (client == null || deviceId.isEmpty) return null;
 
+    final preset = agentPreset.trim();
     state = state.copyWith(creatingSession: true, clearSessionsError: true);
     try {
       final value = await client.createSession(
         deviceId,
         cwd: state.workspace.isEmpty ? null : state.workspace,
+        agentPreset: preset.isEmpty ? null : preset,
       );
       final sessionId = asString(value['sessionId']);
       if (!mounted) return null;
@@ -494,7 +518,7 @@ class AppController extends StateNotifier<AppState> {
 
     var sessionId = state.activeSessionId;
     if (sessionId == null) {
-      sessionId = await createSession();
+      sessionId = await createSession(agentPreset: state.agentPreset);
       if (sessionId == null) {
         return state.sessionsError ?? '无法新建会话。';
       }

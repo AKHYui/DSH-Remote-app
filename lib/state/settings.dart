@@ -15,6 +15,7 @@ class RelaySettings {
     this.token = '',
     this.deviceName = 'my phone',
     this.lastDeviceId = '',
+    this.lastAgentPreset = '',
   });
 
   /// e.g. `https://39.100.70.90:58443`
@@ -29,6 +30,12 @@ class RelaySettings {
   /// The desktop the user last opened, so the app can resume there.
   final String lastDeviceId;
 
+  /// The agent preset (mode) the last task was created with.
+  ///
+  /// Empty means "the user has never chosen" — the new-task sheet then pre-selects
+  /// DSH's shipped default rather than pretending a choice was made.
+  final String lastAgentPreset;
+
   bool get hasRelay => baseUrl.isNotEmpty;
   bool get isReady => baseUrl.isNotEmpty && token.isNotEmpty;
 
@@ -37,12 +44,14 @@ class RelaySettings {
     String? token,
     String? deviceName,
     String? lastDeviceId,
+    String? lastAgentPreset,
   }) {
     return RelaySettings(
       baseUrl: baseUrl ?? this.baseUrl,
       token: token ?? this.token,
       deviceName: deviceName ?? this.deviceName,
       lastDeviceId: lastDeviceId ?? this.lastDeviceId,
+      lastAgentPreset: lastAgentPreset ?? this.lastAgentPreset,
     );
   }
 
@@ -51,6 +60,7 @@ class RelaySettings {
         'token': token,
         'deviceName': deviceName,
         'lastDeviceId': lastDeviceId,
+        'lastAgentPreset': lastAgentPreset,
       };
 
   static RelaySettings fromJson(Map<String, dynamic> json) => RelaySettings(
@@ -58,6 +68,7 @@ class RelaySettings {
         token: (json['token'] as String?) ?? '',
         deviceName: (json['deviceName'] as String?) ?? 'my phone',
         lastDeviceId: (json['lastDeviceId'] as String?) ?? '',
+        lastAgentPreset: (json['lastAgentPreset'] as String?) ?? '',
       );
 
   /// Normalises what the user typed into a base URL the client can use.
@@ -131,6 +142,13 @@ class SettingsController extends StateNotifier<RelaySettings> {
 
   Future<void> rememberDevice(String deviceId) async {
     state = state.copyWith(lastDeviceId: deviceId);
+    await _persist();
+  }
+
+  /// Remembers the mode a task was created with, so the next sheet pre-selects it.
+  Future<void> rememberPreset(String presetId) async {
+    if (presetId.isEmpty || presetId == state.lastAgentPreset) return;
+    state = state.copyWith(lastAgentPreset: presetId);
     await _persist();
   }
 
