@@ -59,7 +59,7 @@ class ChatFakeClient extends RelayClient {
   int sessionCalls = 0;
 
   @override
-  Future<List<SessionSummary>> sessions(String deviceId) async {
+  Future<List<SessionSummary>> sessions(String deviceId, {bool includeArchived = false}) async {
     sessionCalls += 1;
     return const [];
   }

@@ -328,6 +328,11 @@ class _SessionList extends ConsumerWidget {
     }
 
     final workspaces = state.workspaces;
+    // Archived conversations get their own section rather than a place in the
+    // workspace groups: they are out of the way but recoverable, which is exactly
+    // what archiving is for. `visibleSessions` already keeps them out of the groups
+    // and off the welcome screen.
+    final archived = archivedSessions(state.sessions);
     return ListView(
       padding: const EdgeInsets.only(bottom: AppGap.base),
       children: [
@@ -355,6 +360,61 @@ class _SessionList extends ConsumerWidget {
           for (final session in group.sessions)
             _SessionTile(session: session, selected: session.sessionId == state.activeSessionId),
         ],
+        if (archived.isNotEmpty) _ArchivedSection(sessions: archived),
+      ],
+    );
+  }
+}
+
+/// The collapsed list of archived conversations.
+///
+/// Collapsed by default, because archiving something means "stop showing me this" —
+/// a section that opened itself would defeat the point.
+class _ArchivedSection extends StatefulWidget {
+  const _ArchivedSection({required this.sessions});
+
+  final List<SessionSummary> sessions;
+
+  @override
+  State<_ArchivedSection> createState() => _ArchivedSectionState();
+}
+
+class _ArchivedSectionState extends State<_ArchivedSection> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 24),
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(AppGap.page + 10, 4, AppGap.page, 4),
+            child: Row(
+              children: [
+                Icon(
+                  _open ? Icons.expand_more_rounded : Icons.chevron_right_rounded,
+                  size: 16,
+                  color: AppColors.textTertiary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '已归档 ${widget.sessions.length}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_open)
+          for (final session in widget.sessions)
+            _SessionTile(session: session, selected: false),
       ],
     );
   }
@@ -381,6 +441,10 @@ class _SessionTile extends ConsumerWidget {
             ref.read(appControllerProvider.notifier).openSession(session.sessionId);
             Navigator.of(context).pop();
           },
+          // Long press rather than a visible button: the row is already a tap target
+          // the width of the drawer, and archiving is rare enough not to deserve
+          // permanent space next to every title.
+          onLongPress: () => _showSessionActions(context, ref, session),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
             child: Row(
@@ -418,6 +482,96 @@ class _SessionTile extends ConsumerWidget {
     if (delta.inHours < 1) return '${delta.inMinutes}m';
     if (delta.inDays < 1) return '${delta.inHours}h';
     return '${delta.inDays}d';
+  }
+}
+
+/// What a long press on a session offers.
+///
+/// Only archiving for now — one action does not need a menu framework — but the
+/// shape is a sheet so the actions the desktop has and the phone lacks (pin, rename)
+/// have somewhere to go.
+Future<void> _showSessionActions(
+  BuildContext context,
+  WidgetRef ref,
+  SessionSummary session,
+) async {
+  final archive = !session.archived;
+  final chosen = await showModalBottomSheet<bool>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppGap.page, 0, AppGap.page, 6),
+            child: Text(
+              session.label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ),
+          ListTile(
+            leading: Icon(
+              archive ? Icons.archive_outlined : Icons.unarchive_outlined,
+              size: 20,
+            ),
+            title: Text(archive ? '归档' : '取消归档'),
+            subtitle: Text(
+              archive
+                  ? '从列表里收起来，之后还能在「已归档」里找到'
+                  : '放回原来的工作区分组',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+            onTap: () => Navigator.of(context).pop(true),
+          ),
+          const SizedBox(height: AppGap.base),
+        ],
+      ),
+    ),
+  );
+  if (chosen != true || !context.mounted) return;
+
+  final controller = ref.read(appControllerProvider.notifier);
+  final outcome = archive
+      ? await controller.archiveSession(session.sessionId)
+      : await controller.unarchiveSession(session.sessionId);
+  if (!context.mounted) return;
+
+  switch (outcome.kind) {
+    case ArchiveOutcomeKind.ok:
+      return;
+    case ArchiveOutcomeKind.failed:
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(outcome.message)));
+    case ArchiveOutcomeKind.workRunning:
+      // The Host refused because the task is still working. Ask before stopping it —
+      // archiving silently killing a running turn is exactly what this two-step flow
+      // exists to prevent.
+      final stop = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('这个任务还在运行'),
+          content: const Text('归档会先停掉它正在跑的工作，然后收起这个任务。要继续吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('停掉并归档'),
+            ),
+          ],
+        ),
+      );
+      if (stop != true || !context.mounted) return;
+      final forced = await controller.archiveSession(session.sessionId, stopActivity: true);
+      if (!context.mounted) return;
+      if (forced.kind == ArchiveOutcomeKind.failed) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(forced.message)));
+      }
   }
 }
 

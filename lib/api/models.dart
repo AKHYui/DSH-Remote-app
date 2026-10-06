@@ -349,6 +349,7 @@ class SessionSummary {
     this.metrics,
     this.agentPreset = '',
     this.permission = '',
+    this.archived = false,
   });
 
   final String sessionId;
@@ -408,6 +409,15 @@ class SessionSummary {
   /// surfacing rather than burying.
   final String permission;
 
+  /// Whether the desktop has archived this session.
+  ///
+  /// The archived set lives in the Host's Workspace registry and is reported beside
+  /// the list (`archivedSessionIds`) rather than on the row, so the client marks the
+  /// rows it matches. Archived sessions stay out of every ordinary list — showing one
+  /// as a live conversation was a real bug once — and appear only in the drawer's own
+  /// archived section.
+  final bool archived;
+
   /// [updatedAt] as a real time, tolerating either unit.
   ///
   /// Verified against the live harness: `session.list` returns milliseconds
@@ -420,7 +430,9 @@ class SessionSummary {
     return DateTime.fromMillisecondsSinceEpoch(millis);
   }
 
-  factory SessionSummary.fromJson(Map<String, dynamic> json) {
+  /// [archived] is not on the row: the Workspace registry reports the archived set
+  /// beside the list, and the client marks the rows it names.
+  factory SessionSummary.fromJson(Map<String, dynamic> json, {bool archived = false}) {
     final projections = asMap(json['projections']);
     final values = asMap(projections['values']);
     final selection = asMap(values['modelSelection']);
@@ -441,6 +453,7 @@ class SessionSummary {
       metrics: SessionMetrics.fromProjections(projections),
       agentPreset: asString(values['agentPreset']),
       permission: asString(asMap(values['permissions'])['currentValue']),
+      archived: archived,
     );
   }
 
@@ -471,8 +484,18 @@ class SessionSummary {
 ///     session a verification run creates looks exactly like this. A real
 ///     conversation reappears as soon as its first message is accepted.
 List<SessionSummary> visibleSessions(Iterable<SessionSummary> sessions) => sessions
-    .where((session) => !session.isSubagent && !session.blank)
+    .where((session) => !session.isSubagent && !session.blank && !session.archived)
     .toList(growable: false);
+
+/// The sessions a desktop has archived, newest first.
+///
+/// Kept apart from [visibleSessions] on purpose: an archived conversation offered as
+/// an ordinary row was a real bug, so the two lists are built by different functions
+/// and can never be confused for one another.
+List<SessionSummary> archivedSessions(Iterable<SessionSummary> sessions) => sessions
+    .where((session) => session.archived && !session.isSubagent)
+    .toList(growable: false)
+  ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
 /// One durable session event, as carried by `session.event`.
 class SessionEvent {

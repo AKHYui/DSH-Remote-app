@@ -47,7 +47,7 @@ class SilentFollowClient extends RelayClient {
   Future<List<RelayDevice>> devices() async => const [];
 
   @override
-  Future<List<SessionSummary>> sessions(String deviceId) async {
+  Future<List<SessionSummary>> sessions(String deviceId, {bool includeArchived = false}) async {
     sessionListCalls += 1;
     return const [
       SessionSummary(

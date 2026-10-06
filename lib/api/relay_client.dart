@@ -111,9 +111,46 @@ class RelayClient {
   /// which have never had a prompt accepted and are therefore an empty page titled
   /// with an id. The rule itself lives in [visibleSessions] so it is unit tested
   /// without a transport.
-  Future<List<SessionSummary>> sessions(String deviceId) async {
-    final value = await _getValue('/api/v1/devices/$deviceId/sessions');
-    return visibleSessions(_mapList(value['items'], SessionSummary.fromJson));
+  Future<List<SessionSummary>> sessions(String deviceId, {bool includeArchived = false}) async {
+    // `includeArchived` asks the plugin to leave archived Sessions in the list; the
+    // archived id set comes back either way, and is what marks them here. Without the
+    // flag the plugin removes them, which is how this list has always behaved.
+    final query = includeArchived ? '?includeArchived=true' : '';
+    final value = await _getValue('/api/v1/devices/$deviceId/sessions$query');
+    final archived = asStringList(value['archivedSessionIds']).toSet();
+    return visibleSessions(
+      _mapList(
+        value['items'],
+        (json) => SessionSummary.fromJson(
+          json,
+          archived: archived.contains(asString(json['sessionId'])),
+        ),
+      ),
+    );
+  }
+
+  /// Archives a session on the desktop.
+  ///
+  /// Without [stopActivity] the Host **refuses** a session whose work is still
+  /// running (`workspace/session-active`, with the work named in the error details)
+  /// instead of silently killing it — which is what lets the caller ask first and
+  /// then retry with the flag. Returns the updated archived set.
+  Future<Set<String>> archiveSession(
+    String deviceId, {
+    required String sessionId,
+    bool stopActivity = false,
+  }) async {
+    final value = await op(deviceId, 'workspace.archiveSession', {
+      'sessionId': sessionId,
+      if (stopActivity) 'stopActivity': true,
+    });
+    return asStringList(value['archivedSessionIds']).toSet();
+  }
+
+  /// Puts an archived session back among the ordinary ones.
+  Future<Set<String>> unarchiveSession(String deviceId, {required String sessionId}) async {
+    final value = await op(deviceId, 'workspace.unarchiveSession', {'sessionId': sessionId});
+    return asStringList(value['archivedSessionIds']).toSet();
   }
 
   /// Approvals and questions still waiting on a desktop.

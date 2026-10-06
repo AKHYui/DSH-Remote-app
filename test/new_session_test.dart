@@ -42,7 +42,7 @@ class CreateClient extends RelayClient {
   Future<List<RelayDevice>> devices() async => const [];
 
   @override
-  Future<List<SessionSummary>> sessions(String deviceId) async => const [];
+  Future<List<SessionSummary>> sessions(String deviceId, {bool includeArchived = false}) async => const [];
 
   @override
   Future<List<ApprovalAsk>> pendingApprovals() async => const [];

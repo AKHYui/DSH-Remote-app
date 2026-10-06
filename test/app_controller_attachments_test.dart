@@ -60,7 +60,7 @@ class FakeRelayClient extends RelayClient {
   }) async => createWithoutId ? const {} : const {'sessionId': 'session-test-1'};
 
   @override
-  Future<List<SessionSummary>> sessions(String deviceId) async => const [];
+  Future<List<SessionSummary>> sessions(String deviceId, {bool includeArchived = false}) async => const [];
 
   @override
   Future<String> uploadFile(

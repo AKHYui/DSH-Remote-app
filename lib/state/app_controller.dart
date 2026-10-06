@@ -19,6 +19,38 @@ import '../chat/attachments.dart';
 import '../chat/transcript.dart';
 import 'settings.dart';
 
+/// How an archive attempt ended.
+///
+/// [workRunning] is not a failure: the Host refused to archive a session with work in
+/// flight, which is exactly what makes "archive" safe to offer without a scary
+/// confirmation on every tap. The caller spells out the consequences only when there
+/// are any — then retries with `stopActivity`.
+class ArchiveOutcome {
+  const ArchiveOutcome.ok() : kind = ArchiveOutcomeKind.ok, message = '';
+  const ArchiveOutcome.workRunning()
+      : kind = ArchiveOutcomeKind.workRunning,
+        message = '';
+  const ArchiveOutcome.failed(this.message) : kind = ArchiveOutcomeKind.failed;
+
+  final ArchiveOutcomeKind kind;
+  final String message;
+
+  bool get isOk => kind == ArchiveOutcomeKind.ok;
+}
+
+enum ArchiveOutcomeKind { ok, workRunning, failed }
+
+/// Whether an error is the Host refusing because the session is still working.
+///
+/// The bridge flattens Remote errors into `remote_error` with the original code as a
+/// message prefix, so the code is looked for in either place rather than assuming one
+/// shape. Reading it wrong is not dangerous — the archive simply fails — but
+/// recognising it is what turns a dead end into a question.
+bool isSessionActive(RelayException error) {
+  final haystack = '${error.code} ${error.message}';
+  return haystack.contains('session-active') || haystack.contains('session_active');
+}
+
 /// One "this session moved" nudge from the event socket.
 ///
 /// [tick] increments per emission so two signals for the same session are never
@@ -142,9 +174,14 @@ class AppState {
   ///
   /// The harness has no project concept over this API, so a workspace *is* a
   /// `cwd` — which is what `session.create` takes anyway.
+  ///
+  /// Grouped from [visibleSessions], not from the raw list: the phone now asks for
+  /// archived rows too (so the drawer can offer them in their own section), and a
+  /// group built from everything would quietly put them back among live
+  /// conversations — the exact bug that started this feature.
   List<WorkspaceGroup> get workspaces {
     final groups = <String, List<SessionSummary>>{};
-    for (final session in sessions) {
+    for (final session in visibleSessions(sessions)) {
       final key = (session.cwd == null || session.cwd!.isEmpty) ? '' : session.cwd!;
       groups.putIfAbsent(key, () => []).add(session);
     }
@@ -373,7 +410,9 @@ class AppController extends StateNotifier<AppState> {
 
     state = state.copyWith(sessionsLoading: true, clearSessionsError: true);
     try {
-      final sessions = await client.sessions(deviceId);
+      // Archived rows are asked for as well: the drawer offers them in their own
+      // section, and `visibleSessions` keeps them out of every other list.
+      final sessions = await client.sessions(deviceId, includeArchived: true);
       if (!mounted) return;
       state = state.copyWith(
         sessions: sessions,
@@ -419,6 +458,49 @@ class AppController extends StateNotifier<AppState> {
   /// creates the session itself, and must not quietly use a different mode.
   void setAgentPreset(String presetId) {
     state = state.copyWith(agentPreset: presetId.trim());
+  }
+
+  // -- archiving -----------------------------------------------------------
+
+  /// Archives a session, and reports how it went.
+  ///
+  /// [stopActivity] is the second half of a two-step conversation with the Host: the
+  /// first attempt deliberately omits it, so a session with a running turn is
+  /// *refused* rather than killed, and the caller can ask before stopping anything.
+  Future<ArchiveOutcome> archiveSession(String sessionId, {bool stopActivity = false}) async {
+    final client = _client;
+    final deviceId = state.activeDeviceId;
+    if (client == null || deviceId.isEmpty) {
+      return const ArchiveOutcome.failed('尚未连接中继。');
+    }
+    try {
+      await client.archiveSession(deviceId, sessionId: sessionId, stopActivity: stopActivity);
+      // The archived set lives in the Host's registry, so a reload is the only
+      // authoritative view of it — guessing locally would drift.
+      await loadSessions();
+      return const ArchiveOutcome.ok();
+    } on RelayException catch (error) {
+      if (isSessionActive(error)) return const ArchiveOutcome.workRunning();
+      return ArchiveOutcome.failed(error.message);
+    } on Object catch (error) {
+      return ArchiveOutcome.failed('$error');
+    }
+  }
+
+  /// Puts an archived session back among the ordinary ones.
+  Future<ArchiveOutcome> unarchiveSession(String sessionId) async {
+    final client = _client;
+    final deviceId = state.activeDeviceId;
+    if (client == null || deviceId.isEmpty) {
+      return const ArchiveOutcome.failed('尚未连接中继。');
+    }
+    try {
+      await client.unarchiveSession(deviceId, sessionId: sessionId);
+      await loadSessions();
+      return const ArchiveOutcome.ok();
+    } on Object catch (error) {
+      return ArchiveOutcome.failed('$error');
+    }
   }
 
   /// Creates a session and opens it. Returns the new id, or null on failure.

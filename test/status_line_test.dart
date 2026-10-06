@@ -77,7 +77,7 @@ class MetricsClient extends RelayClient {
   Future<List<RelayDevice>> devices() async => const [];
 
   @override
-  Future<List<SessionSummary>> sessions(String deviceId) async {
+  Future<List<SessionSummary>> sessions(String deviceId, {bool includeArchived = false}) async {
     sessionCalls += 1;
     // The desktop kept working while the phone was not looking.
     steps += 1;
