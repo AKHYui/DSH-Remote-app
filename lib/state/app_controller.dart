@@ -694,6 +694,13 @@ class AppController extends StateNotifier<AppState> {
     } on Object {
       // Transient failures are expected; the UI shows the last known state.
     }
+    // The chat's footer numbers come from the session projections, which arrive
+    // with a list read or a follow snapshot. While a turn is running, re-read the
+    // list so they move — otherwise the line freezes at whatever it said when the
+    // stream opened, and a finished turn looks like it never counted.
+    if (state.activeSession?.running ?? false) {
+      await loadSessions();
+    }
   }
 
   Future<void> _startEvents(SecurityContext context) async {

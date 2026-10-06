@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../api/relay_events.dart';
 import '../chat/attachments.dart';
+import '../chat/metrics.dart';
 import '../chat/transcript.dart';
 import '../state/app_controller.dart';
 import '../state/providers.dart';
@@ -597,6 +598,9 @@ class _SessionViewState extends ConsumerState<SessionView>
   String? _olderError;
   String? _error;
 
+  /// Metrics from the newest follow snapshot, if one carried a projection block.
+  SessionMetrics? _snapshotMetrics;
+
   /// Whether the follow stream has been silent long enough that a nudge from the
   /// other channel counts as evidence it is stale.
   ///
@@ -802,6 +806,9 @@ class _SessionViewState extends ConsumerState<SessionView>
           _noteFrame();
           if (frame.kind == 'snapshot') {
             _transcript.applySnapshot(frame.snapshotEvents, hasMore: frame.hasMore);
+            // The snapshot is where the footer numbers arrive; later frames carry
+            // events only.
+            _snapshotMetrics = frame.metrics ?? _snapshotMetrics;
           } else if (frame.kind == 'event') {
             final event = frame.event;
             if (event != null) _transcript.applyEvent(event);
@@ -880,6 +887,21 @@ class _SessionViewState extends ConsumerState<SessionView>
     }
   }
 
+  /// The numbers spelled out, on tap.
+  void _showMetrics(SessionMetrics metrics) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      // The breakdown is taller than the default sheet height on a phone, and it
+      // grows with the rows a session has; let it size itself and scroll.
+      isScrollControlled: true,
+      builder: (_) => _MetricsSheet(
+        title: ref.read(appControllerProvider).activeSession?.label ?? '',
+        metrics: metrics,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -900,10 +922,17 @@ class _SessionViewState extends ConsumerState<SessionView>
       if (reconnected && !_live) _recoverStream('the event socket reconnected');
     });
 
+    // Two sources for the same numbers: the follow snapshot (freshest at open and
+    // after every reconnect) and the task list (refreshed while a turn runs, so the
+    // line moves instead of freezing until the next resubscribe). Newer seq wins.
+    final metrics = SessionMetrics.freshest(_snapshotMetrics, session?.metrics);
+
     return Column(
       children: [
         if (_error != null) _ErrorBar(message: _error!, onRetry: _subscribe),
         Expanded(child: _buildTranscript(theme)),
+        if (metrics != null && !metrics.isEmpty)
+          _StatusLine(metrics: metrics, onTap: () => _showMetrics(metrics)),
         Padding(
           padding: const EdgeInsets.fromLTRB(AppGap.page, 4, AppGap.page, AppGap.page),
           child: Composer(
@@ -1584,6 +1613,96 @@ class _HistoryFooter extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Center(child: child),
+    );
+  }
+}
+
+/// The session's numbers, in the desktop's own wording.
+///
+/// DSH puts this line in its composer dock; the phone puts it in the same place —
+/// directly above the input, under the conversation — so the two read alike.
+class _StatusLine extends StatelessWidget {
+  const _StatusLine({required this.metrics, required this.onTap});
+
+  final SessionMetrics metrics;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final segments = metricsSegments(metrics);
+    if (segments.isEmpty) return const SizedBox.shrink();
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppGap.page, vertical: 6),
+        // One line at any font scale: these are reference numbers, and a wrapped
+        // row here would shove the composer around as they change.
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            segments.join(' · '),
+            style: theme.textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The same numbers, spelled out, after tapping the status line.
+class _MetricsSheet extends StatelessWidget {
+  const _MetricsSheet({required this.title, required this.metrics});
+
+  final String title;
+  final SessionMetrics metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(AppGap.page, AppGap.base, AppGap.page, AppGap.base),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('任务用量', style: theme.textTheme.titleSmall),
+              if (title.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.labelSmall),
+              ],
+              const SizedBox(height: 6),
+              for (final row in metricsDetail(metrics))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(width: 96, child: Text(row.$1, style: theme.textTheme.labelSmall)),
+                      Expanded(
+                        child: Text(
+                          row.$2,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: AppGap.base),
+              // The desktop reads these from a live projection stream; the phone
+              // re-reads them on every (re)subscribe and while a turn runs.
+              Text(
+                '数据来自 DSH 的会话投影：回合与步数、累计 token、缓存命中与上下文占用。',
+                style: theme.textTheme.labelSmall,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

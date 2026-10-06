@@ -48,7 +48,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 
 void main() {
   test('the logo asset is bundled and is the icon artwork', () async {
-    final file = File('$kAppLogoAsset');
+    final file = File(kAppLogoAsset);
     expect(file.existsSync(), isTrue, reason: 'assets/logo.png must be in the repo');
 
     // 384px, generated from tool/icon/app_icon.png. A stub or a truncated file

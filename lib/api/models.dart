@@ -202,6 +202,137 @@ class RelayDevice {
   }
 }
 
+/// The numbers DSH shows in its own composer footer.
+///
+/// Everything here comes from a session's `projections.values`, which both
+/// `session.list` and the opening `session.follow` snapshot carry — so displaying
+/// them costs no extra request. The formulas mirror the desktop's `StatsPills` and
+/// `ContextMeter` exactly, and `test/metrics_test.dart` pins them against values
+/// read from live sessions.
+class SessionMetrics {
+  const SessionMetrics({
+    this.asOfSeq = 0,
+    this.turns = 0,
+    this.steps = 0,
+    this.decodeTokens = 0,
+    this.decodeMs = 0,
+    this.uncachedInputTokens = 0,
+    this.outputTokens = 0,
+    this.cacheReadTokens = 0,
+    this.cacheWriteTokens = 0,
+    this.pressureTokens = 0,
+    this.projectedTokens = 0,
+    this.contextWindow = 0,
+  });
+
+  /// Sequence watermark of the projection this was read from.
+  ///
+  /// Two readings of one session can be compared with it and the newer kept — the
+  /// same "higher seq wins" rule the desktop's projection store uses.
+  final int asOfSeq;
+
+  /// Counts: one per settled step, and one per turn whose number changed.
+  final int turns;
+  final int steps;
+
+  /// Cumulative token accounting for the whole session.
+  final int decodeTokens;
+  final int decodeMs;
+  final int uncachedInputTokens;
+  final int outputTokens;
+  final int cacheReadTokens;
+  final int cacheWriteTokens;
+
+  /// Context occupancy: the newest sample, and the window it is measured against.
+  final int pressureTokens;
+  final int projectedTokens;
+  final int contextWindow;
+
+  /// Reads whichever projection block is on hand.
+  ///
+  /// `session.list` items carry `{kind: 'sequenced', asOfSeq, values}` and the
+  /// follow snapshot carries `{asOfSeq, values}`; the parse is the same for both.
+  factory SessionMetrics.fromProjections(Object? projections) {
+    final block = asMap(projections);
+    final values = asMap(block['values']);
+    final stats = asMap(values['sessionStats']);
+    final usage = asMap(values['tokenUsage']);
+    final pressure = asMap(values['contextPressure']);
+    return SessionMetrics(
+      asOfSeq: asInt(block['asOfSeq']),
+      turns: asInt(stats['turns']),
+      steps: asInt(stats['steps']),
+      decodeTokens: asInt(stats['decodeTokens']),
+      decodeMs: asInt(stats['decodeMs']),
+      uncachedInputTokens: asInt(usage['uncachedInputTokens']),
+      outputTokens: asInt(usage['outputTokens']),
+      cacheReadTokens: asInt(usage['cacheReadTokens']),
+      cacheWriteTokens: asInt(usage['cacheWriteTokens']),
+      pressureTokens: asInt(pressure['pressureTokens']),
+      projectedTokens: asInt(pressure['projectedTokens']),
+      contextWindow: asInt(pressure['contextWindow']),
+    );
+  }
+
+  /// The newer of two readings; `a` wins a tie, so the choice is deterministic.
+  static SessionMetrics? freshest(SessionMetrics? a, SessionMetrics? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return b.asOfSeq > a.asOfSeq ? b : a;
+  }
+
+  /// Input tokens the provider actually billed.
+  ///
+  /// Cached reads and writes are billed too, just far more cheaply — and output
+  /// tokens are *not* part of it, which is what makes this the cache-hit
+  /// denominator rather than the total.
+  int get billedInputTokens =>
+      uncachedInputTokens + cacheReadTokens + cacheWriteTokens;
+
+  /// Everything the session has processed: billed input plus output.
+  int get totalTokens => billedInputTokens + outputTokens;
+
+  /// Decode speed over the whole session, in tokens per second.
+  ///
+  /// Output tokens over the time spent generating them (first token to completion),
+  /// so it is an average that moves once per settled step — not a rolling value.
+  /// Null when no step has reported usage yet.
+  double? get tokensPerSecond => decodeMs > 0 ? decodeTokens / (decodeMs / 1000) : null;
+
+  /// Share of billed input served from the cache. Null when nothing was billed.
+  double? get cacheHitRatio {
+    final billed = billedInputTokens;
+    return billed > 0 ? cacheReadTokens / billed : null;
+  }
+
+  /// Tokens currently occupying the context window, or null when unknown.
+  ///
+  /// `projectedTokens` already folds in any surface movement (a compaction) since
+  /// the sample was taken, so it is preferred over the raw pressure.
+  int? get contextUsedTokens {
+    if (projectedTokens > 0) return projectedTokens;
+    if (pressureTokens > 0) return pressureTokens;
+    return null;
+  }
+
+  /// Context occupancy as a whole percentage, capped at 100, or null when unknown.
+  int? get contextPercent {
+    final used = contextUsedTokens;
+    if (used == null || contextWindow <= 0) return null;
+    final percent = (used / contextWindow * 100).round();
+    return percent > 100 ? 100 : percent;
+  }
+
+  /// Whether anything has happened yet.
+  ///
+  /// A session that has never had a turn has no numbers worth showing — the
+  /// desktop hides its stats row in that case, and so does the phone.
+  bool get hasActivity => turns > 0 || steps > 0 || totalTokens > 0;
+
+  /// Whether there is nothing at all to display.
+  bool get isEmpty => !hasActivity && contextUsedTokens == null;
+}
+
 /// One session row from `session.list`.
 class SessionSummary {
   const SessionSummary({
@@ -215,6 +346,7 @@ class SessionSummary {
     this.model,
     this.cwd,
     this.isSubagent = false,
+    this.metrics,
   });
 
   final String sessionId;
@@ -254,6 +386,12 @@ class SessionSummary {
   final ModelSelection? model;
   final String? cwd;
 
+  /// The desktop's footer numbers, read from the same projection block.
+  ///
+  /// Null only when the harness sent no projection at all; a session that has not
+  /// run yet yields an empty (all-zero) reading instead.
+  final SessionMetrics? metrics;
+
   /// [updatedAt] as a real time, tolerating either unit.
   ///
   /// Verified against the live harness: `session.list` returns milliseconds
@@ -284,6 +422,7 @@ class SessionSummary {
           ModelSelection.fromJson(selection['lastUsed']),
       cwd: json['cwd'] as String?,
       isSubagent: asMap(values['subagent']).isNotEmpty,
+      metrics: SessionMetrics.fromProjections(projections),
     );
   }
 
@@ -401,6 +540,17 @@ class FollowFrame {
   /// fill it on its own — so this is what tells the view there is history to fetch
   /// when the user scrolls back.
   bool get hasMore => raw['hasMore'] == true;
+
+  /// The metrics the opening snapshot carries, or null on later frames.
+  ///
+  /// The desktop gets its footer numbers from a live projection stream; the phone
+  /// has them for free at every (re)subscribe, which is close enough for a line
+  /// that is correct on open and refreshed while a turn runs.
+  SessionMetrics? get metrics {
+    final block = raw['projections'];
+    if (block is! Map) return null;
+    return SessionMetrics.fromProjections(block);
+  }
 
   int get cursor => asInt(raw['cursor']);
 
