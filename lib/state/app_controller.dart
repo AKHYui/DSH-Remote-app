@@ -242,6 +242,7 @@ class AppController extends StateNotifier<AppState> {
   RelayEvents? _events;
   StreamSubscription<RelayEvent>? _eventSubscription;
   Timer? _poll;
+  Timer? _refreshTimer;
   final Map<String, ApprovalAsk> _pendingAsks = {};
   int _signalTick = 0;
 
@@ -709,6 +710,21 @@ class AppController extends StateNotifier<AppState> {
     _poll = Timer.periodic(const Duration(seconds: 15), (_) => _pollDevices());
   }
 
+  /// Re-reads the task list soon, coalescing bursts.
+  ///
+  /// The follow stream tells the view *what* was appended; the projections that
+  /// carry the footer numbers only come with a list read. Reading on every event
+  /// would be a request per step, so the view asks for one read and gets it shortly
+  /// after the burst stops. Without this the numbers were correct only at open,
+  /// every 15s poll, or after a reconnect.
+  void scheduleSessionRefresh() {
+    if (_refreshTimer != null) return;
+    _refreshTimer = Timer(const Duration(milliseconds: 800), () {
+      _refreshTimer = null;
+      if (mounted) unawaited(loadSessions());
+    });
+  }
+
   Future<void> _pollDevices() async {
     final client = _client;
     if (client == null || client.token.isEmpty) return;
@@ -859,6 +875,8 @@ class AppController extends StateNotifier<AppState> {
   Future<void> _teardown() async {
     _poll?.cancel();
     _poll = null;
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
     await _eventSubscription?.cancel();
     _eventSubscription = null;
     await _events?.dispose();

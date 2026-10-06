@@ -139,6 +139,18 @@ class MetricsClient extends RelayClient {
     return _frames.stream;
   }
 
+  /// Delivers one live session event, the way a healthy stream would.
+  void pushEvent(String type, int seq, Map<String, dynamic> data) {
+    if (_frames.isClosed) return;
+    _frames.add(FollowFrame(
+      kind: 'event',
+      raw: {
+        'type': 'event',
+        'event': {'type': type, 'seq': seq, 'time': 0, 'data': data},
+      },
+    ));
+  }
+
   @override
   void close() {
     unawaited(_frames.close());
@@ -151,6 +163,8 @@ Future<AppController> pumpSession(
   MetricsClient client, {
   bool running = false,
   bool withSummaryMetrics = false,
+  String preset = '',
+  String permission = '',
 }) async {
   final controller = AppController(clientFactory: (baseUrl, token) => client);
   await controller.configure(const RelaySettings(baseUrl: 'https://relay.invalid'));
@@ -167,6 +181,8 @@ Future<AppController> pumpSession(
         updatedAt: 1791082274000,
         asOfSeq: 5152,
         title: '任务用量测试',
+        agentPreset: preset,
+        permission: permission,
         metrics: withSummaryMetrics
             ? SessionMetrics.fromProjections(projectionBlock())
             : null,
@@ -254,6 +270,38 @@ void main() {
       callsBefore,
       reason: 'nothing is moving, so there is nothing to re-read',
     );
+  });
+
+  testWidgets('the breakdown also says the mode and who can be asked for approval',
+      (tester) async {
+    final client = MetricsClient(projections: projectionBlock());
+    await pumpSession(tester, client, preset: 'cordis', permission: 'danger-full-access');
+
+    await tester.tap(find.textContaining('tok/s'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('模式'), findsOneWidget);
+    expect(find.text('创造模式'), findsOneWidget);
+    expect(find.text('权限'), findsOneWidget);
+    // The dangerous combination is spelled out rather than hidden behind a code.
+    expect(find.text('完全访问'), findsOneWidget);
+  });
+
+  testWidgets('a settled step refreshes the numbers without waiting for the poll',
+      (tester) async {
+    // The projections do not ride the stream, so the view has to ask. It asks when a
+    // step settles, which is exactly when the desktop's counters move.
+    final client = MetricsClient(projections: projectionBlock());
+    await pumpSession(tester, client, running: true);
+    expect(find.textContaining('847 步'), findsOneWidget);
+
+    final callsBefore = client.sessionCalls;
+    client.pushEvent('step/end', 9001, {'turn': 15, 'step': 848});
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(client.sessionCalls, greaterThan(callsBefore));
+    expect(find.textContaining('848 步'), findsOneWidget);
   });
 
   testWidgets('the list row alone still shows the numbers', (tester) async {

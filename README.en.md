@@ -12,7 +12,7 @@ without a public IP. It needs two companion components: the
 [desktop plugin](https://github.com/AKHYui/DSH-Remote-plugin). The wire protocol between all three is
 defined by [docs/PROTOCOL.md](https://github.com/AKHYui/DSH-Remote-backend/blob/main/docs/PROTOCOL.md) in the backend repository.
 
-Current version **0.2.5** (`pubspec.yaml`: `version: 0.2.5+10`). The launcher label is `DSH Remote` and
+Current version **0.2.6** (`pubspec.yaml`: `version: 0.2.6+11`). The launcher label is `DSH Remote` and
 the applicationId is `com.dshremote.dsh_remote_app` — the id is kept stable across releases so an
 in-place upgrade preserves pairing and settings.
 
@@ -157,7 +157,7 @@ SharedPreferences and never enters the repository.
 | Model | Switch provider / model per session; the options come from `model.catalog` |
 | Approvals and questions | The phone and the desktop both show the request; whichever answers first wins, and the desktop window closes itself afterwards |
 | Deliverables | Shows the files declared with `present` (path and description) without downloading or displaying their contents |
-| Usage line | The desktop's own numbers, under the conversation: `N turns M steps · K tok/s · total tokens · cache hit · context used`, with the breakdown (uncached input, cache read/write, output, context occupancy) a tap away. Read from DSH's session projections with the same formulas the desktop uses |
+| Usage line | The desktop's own numbers, under the conversation: `N turns M steps · K tok/s · total tokens · cache hit · context used`, with the breakdown (mode, permission, uncached input, cache read/write, output, context occupancy) a tap away. Read from DSH's session projections with the same formulas the desktop uses |
 | Mode when creating | A new task can be created in any of DSH's four modes: **Standard / PTC / Minimal / Creator** (agent presets). The mode locks once the session starts, so creation is the only chance to pick; the last choice is remembered and pre-selected, and the task breakdown shows the current one |
 
 | Limit | Value |

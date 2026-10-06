@@ -9,6 +9,7 @@
 library;
 
 import '../api/models.dart';
+import 'permissions.dart';
 import 'presets.dart';
 
 /// Compact token count, the way the desktop prints it: `999`, `4.8K`, `326M`.
@@ -77,13 +78,20 @@ List<String> metricsSegments(SessionMetrics metrics) {
 ///
 /// Kept next to the formatters because it is the same numbers under the same rules,
 /// just spelled out — the line is deliberately terse, this is what makes it
-/// checkable against the desktop.
-List<(String, String)> metricsDetail(SessionMetrics metrics, {String preset = ''}) {
+/// checkable against the desktop. [preset] and [permission] add the two settings
+/// that are not *numbers* but are the other things worth knowing about a task.
+List<(String, String)> metricsDetail(
+  SessionMetrics metrics, {
+  String preset = '',
+  String permission = '',
+}) {
   final rows = <(String, String)>[];
-  // The mode is not a *number*, but it is the other thing worth knowing about a
-  // task — and it is read from the same projection block, so it costs nothing.
+  // Both come from the same projection block as the numbers, so they cost nothing.
   if (preset.isNotEmpty) {
     rows.add(('模式', presetLabel(preset)));
+  }
+  if (permission.isNotEmpty) {
+    rows.add(('权限', permissionLabel(permission)));
   }
   if (metrics.hasActivity) {
     rows.add(('轮次 / 步骤', '${metrics.turns} / ${metrics.steps}'));

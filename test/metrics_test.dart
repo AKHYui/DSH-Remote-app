@@ -8,6 +8,7 @@ library;
 
 import 'package:dsh_remote_app/api/models.dart';
 import 'package:dsh_remote_app/chat/metrics.dart';
+import 'package:dsh_remote_app/chat/permissions.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A projection block shaped like `session.list` / follow-snapshot output.
@@ -191,6 +192,53 @@ void main() {
       expect(SessionMetrics.freshest(null, newer)!.asOfSeq, 11);
       expect(SessionMetrics.freshest(older, null)!.asOfSeq, 10);
       expect(SessionMetrics.freshest(null, null), isNull);
+    });
+  });
+
+  group('permission modes', () {
+    test('the three selectable presets read as their sandbox/approval pair', () {
+      expect(kPermissionPresets.map((preset) => preset.value).toList(),
+          ['read-only', 'workspace-write', 'danger-full-access']);
+      expect(permissionLabel('read-only'), '只读');
+      expect(permissionLabel('workspace-write'), '可写工作区');
+      expect(permissionLabel('danger-full-access'), '完全访问');
+      expect(permissionLabel(''), '');
+    });
+
+    test('only full access silences approvals, and the unknown case is assumed safe', () {
+      expect(permissionAsksForApproval('read-only'), isTrue);
+      expect(permissionAsksForApproval('workspace-write'), isTrue);
+      expect(permissionAsksForApproval('danger-full-access'), isFalse);
+      // `custom` is a derived combination and anything unknown could be anything:
+      // guessing "no approvals" the wrong way is the dangerous direction.
+      expect(permissionAsksForApproval('custom'), isTrue);
+      expect(permissionAsksForApproval('something-new'), isTrue);
+    });
+
+    test('an unknown or derived value is shown as itself', () {
+      expect(permissionLabel('custom'), '自定义');
+      expect(permissionLabel('something-new'), 'something-new');
+    });
+
+    test('the breakdown carries mode and permission above the numbers', () {
+      final metrics = SessionMetrics.fromProjections(projections(
+        asOfSeq: 9,
+        turns: 2,
+        steps: 5,
+        decodeTokens: 10,
+        decodeMs: 1000,
+        output: 10,
+      ));
+
+      final rows = metricsDetail(metrics, preset: 'cordis', permission: 'danger-full-access');
+      expect(rows.first.$1, '模式');
+      expect(rows.first.$2, '创造模式');
+      expect(rows[1].$1, '权限');
+      expect(rows[1].$2, '完全访问');
+      // And a session that reports neither simply omits both rows.
+      final bare = metricsDetail(metrics);
+      expect(bare.any((row) => row.$1 == '模式'), isFalse);
+      expect(bare.any((row) => row.$1 == '权限'), isFalse);
     });
   });
 

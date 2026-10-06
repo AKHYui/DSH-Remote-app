@@ -11,7 +11,7 @@ DSH Remote 是这条链路的手机端：Flutter 客户端，只与**你自己�
 [桌面插件](https://github.com/AKHYui/DSH-Remote-plugin)；三者之间的线协议由后端仓库的
 [`docs/PROTOCOL.md`](https://github.com/AKHYui/DSH-Remote-backend/blob/main/docs/PROTOCOL.md) 定义。
 
-当前版本 **0.2.5**（`pubspec.yaml`：`version: 0.2.5+10`）。启动器显示名为 `DSH Remote`，
+当前版本 **0.2.6**（`pubspec.yaml`：`version: 0.2.6+11`）。启动器显示名为 `DSH Remote`，
 applicationId 是 `com.dshremote.dsh_remote_app`——升级时保持该 id，覆盖安装不会丢失配对与设置。
 
 ## 架构
@@ -147,7 +147,7 @@ python tool/make_icons.py     # 需要 Pillow
 | 模型 | 会话内切换 provider / model，选项来自 `model.catalog` |
 | 审批与提问 | 手机与电脑同时弹出，先作答的一方生效；手机作答后桌面上的窗口会自行消失 |
 | 产物 | 展示 `present` 声明的交付文件（路径与说明），不下载、不显示文件内容 |
-| 用量状态栏 | 会话底部显示与桌面同源的数字：`N 轮 M 步 · K tok/s · 累计 token · 缓存命中 · 已用上下文`；点一下展开明细（未缓存输入、缓存读/写、输出、上下文占用）。数据取自 DSH 的会话投影，公式与桌面一致 |
+| 用量状态栏 | 会话底部显示与桌面同源的数字：`N 轮 M 步 · K tok/s · 累计 token · 缓存命中 · 已用上下文`；点一下展开明细（模式、权限、未缓存输入、缓存读/写、输出、上下文占用）。数据取自 DSH 的会话投影，公式与桌面一致 |
 | 新建时选模式 | 新建任务时可选 DSH 的四种模式：**标准 / PTC / 极简 / 创造**（agent preset）。模式在会话启动后即锁定，所以只有创建时能选；上次选择会被记住并预选，任务明细里也显示当前模式 |
 
 | 限额 | 值 |

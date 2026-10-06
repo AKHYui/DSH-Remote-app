@@ -348,6 +348,7 @@ class SessionSummary {
     this.isSubagent = false,
     this.metrics,
     this.agentPreset = '',
+    this.permission = '',
   });
 
   final String sessionId;
@@ -400,6 +401,13 @@ class SessionSummary {
   /// has started, which is why the phone chooses it at creation.
   final String agentPreset;
 
+  /// The permission mode this session runs under
+  /// (`projections.values.permissions.currentValue`).
+  ///
+  /// `danger-full-access` also turns approvals off for the session, so this is worth
+  /// surfacing rather than burying.
+  final String permission;
+
   /// [updatedAt] as a real time, tolerating either unit.
   ///
   /// Verified against the live harness: `session.list` returns milliseconds
@@ -432,6 +440,7 @@ class SessionSummary {
       isSubagent: asMap(values['subagent']).isNotEmpty,
       metrics: SessionMetrics.fromProjections(projections),
       agentPreset: asString(values['agentPreset']),
+      permission: asString(asMap(values['permissions'])['currentValue']),
     );
   }
 

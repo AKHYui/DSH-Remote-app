@@ -762,6 +762,12 @@ class _SessionViewState extends ConsumerState<SessionView>
           } else if (frame.kind == 'event') {
             final event = frame.event;
             if (event != null) _transcript.applyEvent(event);
+            // The footer numbers live in the projections, which arrive with a list
+            // read rather than with the stream. Ask for one when a step settles, so
+            // the line keeps up with the turn instead of waiting for the next poll.
+            if (event?.type == 'step/end' || event?.type == 'turn/end') {
+              ref.read(appControllerProvider.notifier).scheduleSessionRefresh();
+            }
           } else if (frame.kind == 'assistant-stream') {
             _transcript.applyStreamDelta(frame.streamingText);
           }
@@ -850,6 +856,7 @@ class _SessionViewState extends ConsumerState<SessionView>
         title: session?.label ?? '',
         metrics: metrics,
         preset: session?.agentPreset ?? '',
+        permission: session?.permission ?? '',
       ),
     );
   }
@@ -1604,11 +1611,17 @@ class _StatusLine extends StatelessWidget {
 
 /// The same numbers, spelled out, after tapping the status line.
 class _MetricsSheet extends StatelessWidget {
-  const _MetricsSheet({required this.title, required this.metrics, this.preset = ''});
+  const _MetricsSheet({
+    required this.title,
+    required this.metrics,
+    this.preset = '',
+    this.permission = '',
+  });
 
   final String title;
   final SessionMetrics metrics;
   final String preset;
+  final String permission;
 
   @override
   Widget build(BuildContext context) {
@@ -1627,7 +1640,7 @@ class _MetricsSheet extends StatelessWidget {
                 Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.labelSmall),
               ],
               const SizedBox(height: 6),
-              for (final row in metricsDetail(metrics, preset: preset))
+              for (final row in metricsDetail(metrics, preset: preset, permission: permission))
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 5),
                   child: Row(
@@ -1649,7 +1662,7 @@ class _MetricsSheet extends StatelessWidget {
               // The desktop reads these from a live projection stream; the phone
               // re-reads them on every (re)subscribe and while a turn runs.
               Text(
-                '数据来自 DSH 的会话投影：回合与步数、累计 token、缓存命中与上下文占用。',
+                '数据来自 DSH 的会话投影：模式与权限、回合与步数、累计 token、缓存命中与上下文占用。',
                 style: theme.textTheme.labelSmall,
               ),
             ],

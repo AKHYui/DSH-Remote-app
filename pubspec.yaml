@@ -4,7 +4,7 @@ description: >-
   The wire contract lives in the relay repository (DSH-Remote-backend,
   docs/PROTOCOL.md).
 publish_to: "none"
-version: 0.2.5+10
+version: 0.2.6+11
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
