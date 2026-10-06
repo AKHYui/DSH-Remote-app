@@ -12,7 +12,7 @@ without a public IP. It needs two companion components: the
 [desktop plugin](https://github.com/AKHYui/DSH-Remote-plugin). The wire protocol between all three is
 defined by [docs/PROTOCOL.md](https://github.com/AKHYui/DSH-Remote-backend/blob/main/docs/PROTOCOL.md) in the backend repository.
 
-Current version **0.2.7** (`pubspec.yaml`: `version: 0.2.7+12`). The launcher label is `DSH Remote` and
+Current version **0.2.8** (`pubspec.yaml`: `version: 0.2.8+13`). The launcher label is `DSH Remote` and
 the applicationId is `com.dshremote.dsh_remote_app` — the id is kept stable across releases so an
 in-place upgrade preserves pairing and settings.
 

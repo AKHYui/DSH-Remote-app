@@ -118,7 +118,12 @@ class RelayClient {
     final query = includeArchived ? '?includeArchived=true' : '';
     final value = await _getValue('/api/v1/devices/$deviceId/sessions$query');
     final archived = asStringList(value['archivedSessionIds']).toSet();
-    return visibleSessions(
+    // `listedSessions`, not `visibleSessions`: the archived rows are wanted here —
+    // they are marked and handed on to the drawer, which is the surface that shows
+    // them. Filtering them at the transport layer (which this used to do, before the
+    // split) left the archived section permanently empty while the grouping looked
+    // perfectly correct.
+    return listedSessions(
       _mapList(
         value['items'],
         (json) => SessionSummary.fromJson(

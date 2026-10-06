@@ -20,16 +20,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-SessionSummary session(String id, {String title = '', bool archived = false, int updated = 1}) =>
+SessionSummary session(
+  String id, {
+  String title = '',
+  bool archived = false,
+  bool blank = false,
+  bool subagent = false,
+  int updated = 1,
+}) =>
     SessionSummary(
       sessionId: id,
       running: false,
       agentAvailable: true,
-      blank: false,
+      blank: blank,
       updatedAt: updated,
       asOfSeq: 10,
       title: title,
       archived: archived,
+      isSubagent: subagent,
     );
 
 /// Answers `session.list` with an archived set the test controls, and records the two
@@ -126,18 +134,53 @@ Future<(AppController, ArchiveClient)> pumpDrawer(
 
 void main() {
   group('which lists a session appears in', () {
-    test('an archived row is kept out of the ordinary list', () {
+    test('an archived row is kept by the transport but hidden from ordinary lists', () {
+      // The bug this pins: the *client* filtered archived rows out entirely, so the
+      // controller never saw them and the archived section stayed empty — while every
+      // test that stubbed `sessions()` passed, because the stubs bypassed the very
+      // layer that was doing the filtering.
       final all = [
         session('a', title: '在用'),
         session('b', title: '收起来', archived: true),
-        session('c', title: '子代理', archived: false),
+        session('c', title: '空任务', blank: true),
       ];
 
-      final visible = visibleSessions(all);
-      expect(visible.map((s) => s.sessionId), ['a', 'c']);
+      expect(listedSessions(all).map((s) => s.sessionId), ['a', 'b'],
+          reason: 'what a list read hands on — archived rows included');
+      expect(visibleSessions(all).map((s) => s.sessionId), ['a'],
+          reason: 'what a group or a recent chip may show');
+      expect(archivedSessions(all).map((s) => s.sessionId), ['b']);
+    });
 
-      final archived = archivedSessions(all);
-      expect(archived.map((s) => s.sessionId), ['b']);
+    test('a subagent or blank row is dropped even when it is archived', () {
+      final all = [
+        session('live'),
+        session('archived', archived: true),
+        session('subagent-archived', archived: true, subagent: true),
+        session('blank-archived', archived: true, blank: true),
+      ];
+
+      expect(listedSessions(all).map((s) => s.sessionId), ['live', 'archived']);
+      expect(archivedSessions(all).map((s) => s.sessionId), ['archived'],
+          reason: 'archiving residue must not make it visible');
+    });
+
+    test('a row is marked archived from the set the list reports beside it', () {
+      // The archived set is not on the row: the Workspace registry reports it beside
+      // the list, and the client marks the rows it names.
+      final marked = SessionSummary.fromJson(
+        {
+          'sessionId': 'session-x',
+          'running': false,
+          'agentAvailable': true,
+          'blank': false,
+          'updatedAt': 1,
+        },
+        archived: true,
+      );
+
+      expect(marked.archived, isTrue);
+      expect(SessionSummary.fromJson({'sessionId': 'session-y'}).archived, isFalse);
     });
 
     test('archived sessions come back newest first', () {

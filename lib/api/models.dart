@@ -469,7 +469,7 @@ class SessionSummary {
   }
 }
 
-/// The sessions a phone should offer to a human.
+/// The sessions a phone should offer to a human at all.
 ///
 /// Two categories are dropped, for different reasons:
 ///
@@ -483,6 +483,20 @@ class SessionSummary {
 ///     with a meaningless id — and it is almost always residue, because every probe
 ///     session a verification run creates looks exactly like this. A real
 ///     conversation reappears as soon as its first message is accepted.
+///
+/// Archived sessions are **kept**: the drawer shows them in their own section, and
+/// dropping them here would hide them from the one surface that wants them. Ordinary
+/// lists use [visibleSessions] instead.
+List<SessionSummary> listedSessions(Iterable<SessionSummary> sessions) => sessions
+    .where((session) => !session.isSubagent && !session.blank)
+    .toList(growable: false);
+
+/// The sessions an ordinary list — workspace groups, recent chips — should show.
+///
+/// Everything [listedSessions] keeps, minus the archived ones: archiving means "out
+/// of the way", so an archived conversation must never appear among live ones. It is
+/// a separate function so the two can never be confused: the list the transport
+/// returns and the list a view shows are different questions.
 List<SessionSummary> visibleSessions(Iterable<SessionSummary> sessions) => sessions
     .where((session) => !session.isSubagent && !session.blank && !session.archived)
     .toList(growable: false);
@@ -492,8 +506,12 @@ List<SessionSummary> visibleSessions(Iterable<SessionSummary> sessions) => sessi
 /// Kept apart from [visibleSessions] on purpose: an archived conversation offered as
 /// an ordinary row was a real bug, so the two lists are built by different functions
 /// and can never be confused for one another.
+///
+/// Blank and subagent rows are dropped here too. Archiving a session that never
+/// accepted a prompt — which is what every probe or abandoned create leaves behind —
+/// must not turn residue into a visible row just because it is now archived.
 List<SessionSummary> archivedSessions(Iterable<SessionSummary> sessions) => sessions
-    .where((session) => session.archived && !session.isSubagent)
+    .where((session) => session.archived && !session.isSubagent && !session.blank)
     .toList(growable: false)
   ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 

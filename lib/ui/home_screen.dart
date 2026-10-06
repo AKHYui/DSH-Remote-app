@@ -351,8 +351,9 @@ class _WelcomeViewState extends ConsumerState<WelcomeView> with _AttachmentPicke
     final theme = Theme.of(context);
     final state = ref.watch(appControllerProvider);
     // Three fit on one row at phone width; a fourth wraps to a clipped second
-    // row on a short viewport.
-    final recent = state.sessions.take(3).toList();
+    // row on a short viewport. Archived tasks are excluded: the welcome screen
+    // offers "continue recent work", and something the user put away is not that.
+    final recent = visibleSessions(state.sessions).take(3).toList();
 
     return Column(
       children: [
